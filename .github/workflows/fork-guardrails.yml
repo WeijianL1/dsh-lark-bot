@@ -1,0 +1,57 @@
+name: Fork Guardrails
+on:
+  pull_request:
+  push:
+    branches: ["feature/**", "maintenance/**", "staging"]
+concurrency:
+  group: fork-guardrails-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  guardrails:
+    name: Fork guardrails
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned scanners
+        run: |
+          python3 .guardrails/install_tools.py
+          python3 -m venv /tmp/fork-guardrails
+          /tmp/fork-guardrails/bin/pip install -r .guardrails/requirements.txt
+          echo /tmp/fork-guardrails/bin >> "$GITHUB_PATH"
+      - name: Test history scanner
+        run: python3 -m unittest discover -s .guardrails -p "test_*.py"
+      - name: Scan new history and check changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ]; then
+            BASE_SHA="$(cat .guardrails/baseline-ref)"
+            export BASE_SHA
+            git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"
+          fi
+          python3 .guardrails/checks.py secrets
+          pre-commit run --from-ref "$BASE_SHA" --to-ref "$HEAD_SHA"
+  quality:
+    name: Fork quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.20.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: python3 .guardrails/checks.py quality

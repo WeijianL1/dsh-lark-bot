@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c
+    hooks:
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+  - repo: local
+    hooks:
+      - id: gitleaks
+        name: Scan staged changes for secrets
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false
+      - id: private-runtime-files
+        name: Keep runtime credentials and memory out of source
+        entry: Runtime credentials, databases, and session files must not be committed.
+        language: fail
+        files: '(^|/)(\.env($|\.(?!example$|sample$|template$))|credentials\.json$|auth\.json$|skills\.env$|migration-secrets/|\.mnemon/|sessions\.json$|jobs\.json$)|\.(sqlite|sqlite3|db)$'
+      - id: actionlint
+        name: Validate GitHub Actions syntax
+        entry: actionlint
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$'
+      - id: zizmor
+        name: Check GitHub Actions security
+        entry: zizmor --offline --no-progress --min-severity medium
+        language: system
+        files: '^\.github/workflows/.*\.ya?ml$'

@@ -1,3 +1,5 @@
+import { attachConversationLearning } from './learning/host.js';
+import { bindFeedbackGenerator, type FeedbackGenerate } from './feedback/generate.js';
 import type { Context } from '@deepseek-ai/cordis';
 import { Service } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
@@ -113,11 +115,15 @@ export interface LarkBridgeStatus {
  */
 export class LarkBridgeService extends Service {
   private engine: BridgeEngine | undefined;
+  private stopLearning: (() => Promise<void>) | undefined;
   private startPromise: Promise<BridgeEngine> | undefined;
   private stopPromise: Promise<void> | undefined;
 
-  constructor(ctx: Context) {
-    super(ctx, 'larkBridge');
+  private readonly feedbackGenerate: FeedbackGenerate;
+
+  constructor(private readonly host: Context) {
+    super(host, 'larkBridge');
+    this.feedbackGenerate = bindFeedbackGenerator(host);
   }
 
   status(): LarkBridgeStatus {
@@ -143,11 +149,13 @@ export class LarkBridgeService extends Service {
       env,
       profileName: config.profile ?? 'default',
       allowOnboarding: true,
+      ...(env.feedbackRepair || env.feedbackMemory ? { feedbackGenerate: this.feedbackGenerate } : {}),
       ...(deps.createChannel ? { createChannel: deps.createChannel } : {}),
       ...(deps.adapter ? { adapter: deps.adapter } : {}),
     })
       .then((engine) => {
         this.engine = engine;
+        if (engine.learning) this.stopLearning = attachConversationLearning(this.host, engine.learning);
         return engine;
       })
       .finally(() => {
@@ -178,6 +186,8 @@ export class LarkBridgeService extends Service {
         }
       }
       if (this.engine === engine) this.engine = undefined;
+      await this.stopLearning?.();
+      this.stopLearning = undefined;
       await engine?.stop();
     })();
     this.stopPromise = stopping.finally(() => {

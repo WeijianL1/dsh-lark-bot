@@ -3,12 +3,12 @@
   "subject": "io.github.plutokeating.dsh-lark-bot@0.19.16",
   "specVersion": "community-v0.15",
   "hostDescriptorDigest": "sha256:b440a6f6548c56d9b7e07627ddd3c5324fbdba5efca646eb010435d523d6b4a1",
-  "artifactDigest": "sha256:07f95774a27342daa02d4be1335f35b60cea94db8e4d800476de3eb43b8ab6c5",
-  "suiteVersion": "0.15.0-experimental+e1b902b0",
+  "artifactDigest": "sha256:d63c8b1fd201341d9cc999289989775dbba25db847cd3bb2ec73d7f706134426",
+  "suiteVersion": "dsh-lark-bot-ci-local/0.19.16",
   "evidenceLevel": "Tested",
   "result": "pass",
-  "testedAt": "2026-08-25T02:59:40Z",
-  "runtime": "node-22/linux-x64/local",
+  "testedAt": "2026-09-07T22:17:33.033690Z",
+  "runtime": "node-24/linux-x64/local-profile-fixture",
   "revoked": false,
   "failedRequirements": []
 }

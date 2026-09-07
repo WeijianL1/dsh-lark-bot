@@ -303,6 +303,12 @@ export class JobLedger {
     return structuredClone(record);
   }
 
+  /** Exact transport-message lookup for binding outgoing feedback to its source. */
+  findMessage(messageId: string): DurableQueuedMessage | undefined {
+    const record = this.data.records[messageId];
+    return record ? structuredClone(record.message) : undefined;
+  }
+
   counts(scope: string, workspaceCwd: string): JobCounts {
     const counts = { ...EMPTY_COUNTS };
     for (const record of this.data.records ? Object.values(this.data.records) : []) {

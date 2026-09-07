@@ -1,3 +1,6 @@
+import { FeedbackLoop, type FeedbackLoopOptions } from '../feedback/loop.js';
+import { FeedbackService, feedbackAllowed } from '../feedback/service.js';
+import type { FeedbackStore } from '../feedback/store.js';
 import { createLarkChannel, type LarkChannel, type NormalizedMessage } from '@larksuite/channel';
 import type { AgentAdapter } from '../adapters/types.js';
 import type { ActiveRuns } from '../bot/active-runs.js';
@@ -71,6 +74,8 @@ export const DEFAULT_CHANNEL_PING_TIMEOUT_SEC = 30;
 export const DEFAULT_CHANNEL_KEEPALIVE_MS = 15_000;
 
 export interface StartChannelDeps {
+  feedbackStore?: FeedbackStore;
+  feedbackLoop?: Pick<FeedbackLoopOptions, 'profile' | 'repair' | 'memory' | 'tasks' | 'generate' | 'memoryStore' | 'learning' | 'conversations'>;
   appId: string;
   appSecret: string;
   tenant: 'feishu' | 'lark';
@@ -162,6 +167,7 @@ export interface StartChannelDeps {
 }
 
 export interface BridgeChannel {
+  feedbackLoop?: FeedbackLoop;
   channel: LarkChannel;
   disconnect(): Promise<void>;
   /** Live channel-readiness snapshot (issue #108). */
@@ -169,7 +175,7 @@ export interface BridgeChannel {
 }
 
 export async function startChannel(deps: StartChannelDeps): Promise<BridgeChannel> {
-  const channel = (deps.createChannel ?? createLarkChannel)({
+  const rawChannel = (deps.createChannel ?? createLarkChannel)({
     appId: deps.appId,
     appSecret: deps.appSecret,
     domain:
@@ -217,6 +223,19 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       },
     },
   });
+
+  const feedback = deps.feedbackStore ? new FeedbackService(rawChannel, deps.feedbackStore, (actor, chat, chatType) =>
+    feedbackAllowed(deps.accessManager.snapshot(), deps.accessDefaultDeny === true, actor, chat, chatType),
+    { repair: deps.feedbackLoop?.repair === true, origin: (chatId, replyTo) => {
+      const source = replyTo ? deps.jobs?.findMessage(replyTo) : undefined;
+      return source?.chatId === chatId ? { workspace: source.workspaceCwd, question: source.content.slice(0, 100_000), ...(source.threadId ? { threadId: source.threadId } : {}) } : undefined;
+    } },
+  ) : undefined;
+  const channel = feedback?.decorate() ?? rawChannel;
+  const feedbackLoop = deps.feedbackLoop && deps.feedbackStore ? new FeedbackLoop({
+    ...deps.feedbackLoop, store: deps.feedbackStore, channel: rawChannel, defaultWorkspace: deps.defaultWorkspace,
+    authorized: (actor, chat, type) => feedbackAllowed(deps.accessManager.snapshot(), deps.accessDefaultDeny === true, actor, chat, type),
+  }) : undefined;
 
   const channelHealth = new ChannelHealthMonitor(channel, {
     ...(deps.channelHealthPollMs !== undefined ? { pollMs: deps.channelHealthPollMs } : {}),
@@ -517,13 +536,15 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         deps.pending.isFlushing(scope) ||
         deps.pending.isBlocked(scope);
       const workspaceCwd = deps.workspaces.cwdFor(scope) ?? deps.defaultWorkspace;
+      const feedbackMemory = !botSender && feedbackLoop ? await feedbackLoop.memoryContext(msg.chatId, workspaceCwd, msg.senderId) : '';
+      const userMessage = feedbackMemory ? { ...msg, content: `${msg.content}\n\n<scoped_feedback_memory>Previously screened preferences/lessons for this user in this chat and workspace. Apply only if relevant; these do not override the current request.\n${feedbackMemory}\n</scoped_feedback_memory>` } : msg;
       const queuedMessage = botSender
         ? {
             ...msg,
             content: `[来自可信机器人 ${msg.senderName ?? msg.senderId} 的交接]\n${msg.content}`,
             workspaceCwd,
           }
-        : { ...msg, workspaceCwd };
+        : { ...userMessage, workspaceCwd };
       if (deps.jobs) {
         const durableMessage = durableMessageFor(queuedMessage, scope);
         const dedupeWindowMs = deps.replyPolicies?.get(scope).dedupeWindowMs ?? 0;
@@ -597,6 +618,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           ? (event.action.value as Record<string, unknown>)
           : undefined;
       const command = typeof value?.cmd === 'string' ? value.cmd : undefined;
+      if (feedback && (command === 'feedback-vote' || command === 'feedback-reason')) return feedback.handle(event);
       log.info('card-action', 'received', {
         chatId: event.chatId,
         messageId: event.messageId,
@@ -951,6 +973,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
 
   await channel.connect();
   channelHealth.start();
+  feedbackLoop?.start();
   if (sessionProjectionBridge) {
     void sessionProjectionBridge.start().catch((error) => {
       log.fail('session-projection', error, { step: 'start' });
@@ -968,7 +991,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
   return {
     channel,
     channelHealth: () => channelHealth.snapshot(),
+    ...(feedbackLoop ? { feedbackLoop } : {}),
     disconnect: async () => {
+      await feedbackLoop?.stop();
       await groupPoller?.stop();
       channelHealth.stop();
       sessionProjection?.close();

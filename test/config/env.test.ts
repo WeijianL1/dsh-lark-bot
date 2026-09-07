@@ -16,6 +16,8 @@ describe('loadRuntimeEnv', () => {
     expect(env.model).toBe('');
     expect(env.runTimeoutMs).toBe(300_000);
     expect(env.stopGraceMs).toBe(5_000);
+    expect(env.feedback).toBe(false);
+    expect(loadRuntimeEnv({ DSH_LARK_FEEDBACK: 'true' }).feedback).toBe(true);
     expect(env.groupNoAt).toBe(false);
     expect(env.groupPollMs).toBe(3_000);
     expect(env.botHandoffMax).toBe(6);

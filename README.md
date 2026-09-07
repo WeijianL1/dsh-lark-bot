@@ -171,3 +171,12 @@ npx dsh-lark-bot@latest upgrade --profile dsh-lark --yes   # 升级（或飞书�
 ## 免责声明
 
 > 本项目为非官方社区工具，与 DeepSeek、字节跳动 / 飞书（Lark）无关联，亦未获得其背书。DeepSeek Harness、Feishu / Lark 及相关商标归各自权利人所有。
+
+## 回复评价（此 fork）
+
+设置 `DSH_LARK_FEEDBACK=true`，为新回复和文件添加 👍 / 👎，点击后显示高亮选中态，差评原因直接在原卡片填写（群内共享可见）。
+👍 / 👎 按钮并排显示，已保存原因标注作者姓名，原因最多 1000 字。反馈持久保存在服务器。覆盖范围、权限和数据格式见 [回复评价](docs/FEEDBACK.md)。
+
+可选开启提交差评原因后自动修正文字回答，以及每天筛选反馈写入独立 Mnemon 记忆，并在后续同范围对话中读回。见 [反馈闭环](docs/FEEDBACK_LOOPS.md)。
+
+可选的[对话学习](docs/CONVERSATION_LEARNING.md)支持从后续聊天提取有来源的长期偏好，与按钮反馈共用 Mnemon 队列。

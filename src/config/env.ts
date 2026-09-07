@@ -34,6 +34,11 @@ export interface RuntimeEnv {
   imageMaxDimension: number;
   runTimeoutMs: number;
   stopGraceMs: number;
+  /** Opt-in persistent votes on replies and files. */
+  feedback: boolean;
+  feedbackRepair: boolean;
+  feedbackMemory: boolean;
+  conversationLearning: boolean;
   /** Opt-in group history polling to receive messages that do not mention the bot. */
   groupNoAt: boolean;
   /** Poll interval for group no-at history reads (minimum 1000ms). */
@@ -306,6 +311,10 @@ export function loadRuntimeEnv(
     ),
     runTimeoutMs: parseTimeout(source.DSH_LARK_RUN_TIMEOUT_MS),
     stopGraceMs: parseStopGrace(source.DSH_LARK_STOP_GRACE_MS),
+    feedback: parseBoolean(source.DSH_LARK_FEEDBACK, false),
+    feedbackRepair: parseBoolean(source.DSH_LARK_FEEDBACK_REPAIR, false),
+    feedbackMemory: parseBoolean(source.DSH_LARK_FEEDBACK_MEMORY, false),
+    conversationLearning: parseBoolean(source.DSH_CONVERSATION_LEARNING, false),
     groupNoAt: parseBoolean(source.DSH_LARK_GROUP_NO_AT, false),
     groupPollMs: parseIntAtLeast(
       source.DSH_LARK_GROUP_POLL_MS,

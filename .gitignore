@@ -52,3 +52,6 @@ Desktop.ini
 .*.tmp
 .vscode/
 .idea/
+
+# Private per-message votes and reasons
+/feedback/

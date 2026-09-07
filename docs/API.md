@@ -1177,3 +1177,24 @@ CLI：`dsh-lark-bot setup`（默认安装守护，`--no-guardian` 跳过）、
 - `SecretTargetManager`：仅允许 `dsh-credential/<validated-ref>` 与 `app-secret/current|<profile>`。
 - localhost `POST /secret` 与 `lark_request_secret({target, reference, purpose?})`：用 sessionId 路由 scope，管理员授权后等待安全表单；响应仅含配置状态。
 - `/secret …`、`/language …` 与 `/key set <ref>` 是人工入口；普通聊天和 provider `--api-key` 不接受值。
+
+## 回复评价 / Feedback
+
+`DSH_LARK_FEEDBACK`（默认 `false`）开启本 fork 的消息评价。回调 `feedback-vote`
+携带 `id/rating`，`feedback-reason` 携带 `id/token` 及表单字段 `reason`；用户与
+聊天身份只取 SDK 归一化事件。成功回调返回 `card: {type: "raw", data: ...}` 更新原共享卡片；
+原因输入最多 1000 字，与飞书输入框上限一致。显示名字从事件或群成员列表取得（最多等待 800ms）。
+原因表单绑定投票人、token、原聊天及评价卡消息。记录格式和权限见 [FEEDBACK.md](FEEDBACK.md)。
+
+`DSH_LARK_FEEDBACK` defaults to false. Vote callbacks carry `id/rating`; reason
+callbacks carry `id/token` and the `reason` form field. Actor/chat identity comes
+from normalized SDK events, with stored bindings checked on each submission.
+Successful callbacks return `card: {type: "raw", data: ...}` to update the shared
+card; inline reasons are bound to the voter, token, original chat and feedback message.
+
+可选 `DSH_LARK_FEEDBACK_REPAIR` / `DSH_LARK_FEEDBACK_MEMORY` 默认关闭。修正意图与原因原子保存；
+`FeedbackLoop` 后台消费并记录结果。原问题/工作区只从 `JobLedger.findMessage(replyTo)` 精确绑定。
+`feedbackGenerate` 为宿主注入的不带工具模型调用接口；不通过普通 agent 工具调度执行。
+每日记忆与范围隔离、回执及失败语义见 [FEEDBACK_LOOPS.md](FEEDBACK_LOOPS.md)。
+
+`ConversationLearningPort` exposes resolve/observe/recall/activity to the host lifecycle adapter. `LearningJournal` owns conversation receipts and versioned lessons; `FeedbackMemory.forget` supports scoped, idempotent native retirement. See [conversation learning](CONVERSATION_LEARNING.md).

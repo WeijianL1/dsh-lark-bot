@@ -1,3 +1,10 @@
+import { resolveLearningIdentity } from '../../learning/origin.js';
+import { LearningJournal } from '../../learning/journal.js';
+import type { ConversationLearningPort } from '../../learning/host.js';
+import { FeedbackTasks } from '../../feedback/tasks.js';
+import { MnemonFeedbackMemory } from '../../feedback/memory.js';
+import type { FeedbackGenerate } from '../../feedback/generate.js';
+import { FeedbackStore } from '../../feedback/store.js';
 import { mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -101,6 +108,7 @@ export interface BridgeEngineStatus {
 
 export interface BridgeEngine {
   readonly profile: string;
+  readonly learning?: ConversationLearningPort;
   readonly home: string;
   status(): BridgeEngineStatus;
   /** Apply settings that are safe for subsequent work without stopping active runs. */
@@ -115,6 +123,7 @@ export interface BridgeEngineSafeSettings {
 }
 
 export interface BridgeEngineOptions {
+  feedbackGenerate?: FeedbackGenerate;
   env: RuntimeEnv;
   profileName: string;
   /** Allow first-run QR onboarding when no credentials exist. */
@@ -303,8 +312,13 @@ export async function startBridgeEngine(
       '多机器人实例不能共享 Web adapter 事件流；请将该实例配置为 sdk 或 acp。',
     );
   }
+  const learningOrigins = new Map<string, { sessionId: string; messageId: string; workspace: string }>();
   if (adapter instanceof WebDshAdapter) {
     adapter.setPromptObserver(async ({ sessionId, rpcId, origin }) => {
+      if (env.conversationLearning) {
+        learningOrigins.set(rpcId, { sessionId, messageId: origin.messageId, workspace: origin.workspaceCwd });
+        if (learningOrigins.size > 2000) learningOrigins.delete(learningOrigins.keys().next().value!);
+      }
       const binding = sessionProjections.get(origin.scope, origin.workspaceCwd);
       if (!binding || binding.sessionId !== sessionId) return;
       await sessionProjections.recordCorrelation(
@@ -644,6 +658,9 @@ export async function startBridgeEngine(
     (scope) => concurrencyStore.get(scope) ?? defaultScopeConcurrency,
   );
 
+  if (env.feedback && (env.feedbackRepair || env.feedbackMemory) && !options.feedbackGenerate) {
+    log.warn('feedback-loop', 'disabled-without-host-model', { hint: 'Run as a DSH profile plugin for feedback repair/memory' });
+  }
   const channelInput: Parameters<typeof startChannel>[0] = {
     appId: activeProfile.accounts.appId,
     appSecret: activeProfile.accounts.appSecret,
@@ -675,6 +692,18 @@ export async function startBridgeEngine(
     replyPolicies,
     executionModes,
     languagePolicies,
+    ...(env.feedback ? { feedbackStore: new FeedbackStore(paths.profilePath(profileName, 'feedback')) } : {}),
+    ...(env.feedback && options.feedbackGenerate && (env.feedbackRepair || env.feedbackMemory) ? { feedbackLoop: {
+      profile: profileName, repair: env.feedbackRepair, memory: env.feedbackMemory, conversations: env.conversationLearning,
+      learning: new LearningJournal(paths.profilePath(profileName, 'feedback/learning')),
+      tasks: new FeedbackTasks(paths.profilePath(profileName, 'feedback/loop/tasks')),
+      generate: async (system: string, prompt: string, signal: AbortSignal) => {
+        const route = await dshConfig.defaultModelSelection();
+        if (!route) throw new Error('Configure the DSH default model for feedback processing');
+        return options.feedbackGenerate!({ system, prompt, signal, ...route });
+      },
+      ...(env.feedbackMemory ? { memoryStore: new MnemonFeedbackMemory(process.env.MNEMON_DATA_DIR ?? join(defaultWorkspace, '.mnemon'), process.env.MNEMON_CLI_PATH ?? 'mnemon') } : {}),
+    } } : {}),
     questions,
     plans,
     densityStore,
@@ -896,6 +925,18 @@ export async function startBridgeEngine(
   return {
     profile: profileName,
     home: paths.root,
+    ...(env.conversationLearning && bridge.feedbackLoop ? { learning: {
+      resolve: (sessionId: string, workspace: string, rpcId?: string) => {
+        const origin = rpcId ? learningOrigins.get(rpcId) : undefined;
+        return resolveLearningIdentity({ sessionId, workspace, rpcId, origin,
+          message: origin ? jobs.findMessage(origin.messageId) : undefined,
+          boundToFeishu: !!sessionProjections.ownerOf(sessionId) || !!sessions.scopeForSession(sessionId),
+        });
+      },
+      activity: (identity, sessionId, active) => bridge.feedbackLoop!.conversationActivity(identity, sessionId, active),
+      observe: (input) => bridge.feedbackLoop!.observeConversation(input),
+      recall: (identity) => bridge.feedbackLoop!.memoryContext(identity.chatId, identity.workspace, identity.actorId),
+    } satisfies ConversationLearningPort } : {}),
     status: () => ({
       state: stopped ? 'stopped' : 'running',
       profile: profileName,

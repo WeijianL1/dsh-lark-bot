@@ -172,3 +172,14 @@ npx dsh-lark-bot@latest upgrade --profile dsh-lark --yes   # upgrade (or admin /
 ## Disclaimer
 
 > This is an unofficial community tool, unaffiliated with and not endorsed by DeepSeek or ByteDance / Feishu (Lark). DeepSeek Harness, Feishu / Lark, and related trademarks belong to their respective owners.
+
+## Message feedback (this fork)
+
+Set `DSH_LARK_FEEDBACK=true` to add thumbs up/down to new replies and files,
+with highlighted selections and optional reasons entered in the same shared card.
+Votes are persisted on the server; submitted reason previews are visible to the chat.
+See [Message feedback](docs/FEEDBACK.md) for coverage, access and storage.
+
+Optional [feedback loops](docs/FEEDBACK_LOOPS.md) revise text answers after reason submission and review feedback daily for scoped Mnemon memory reused in subsequent conversations.
+
+Optional [conversation learning](docs/CONVERSATION_LEARNING.md) unifies natural-language feedback and vote evidence with scoped Mnemon memory.

@@ -443,3 +443,23 @@ TUI/WebUI 的 active session 不参与 binding 决策。
 | `src/service/` | 正常 dsh profile 的 systemd / launchd / Windows / portable 生命周期、0600 环境快照、状态与日志 |
 | `test/setup.ts` | vitest 启动前隔离现场 `DSH_HOME`：profile 构建类测试必须落在各自临时 home，绝不解析到（或穿透写坏）现场 dsh profile 的 `node_modules/dsh-lark-bot`（该符号链接回到仓库，会把真实 `package.json` 覆盖成夹具内容）。见 `test/test-hermeticity.test.ts` |
 | `docs/conformance/` | TUI local/remote Host Descriptor 与发布 artifact conformance evidence |
+
+## 回复评价 / Feedback
+
+`src/feedback` 在 bridge profile 中装饰原始 channel 的内容发送方法，控制卡和流式
+更新保持原流程。`FeedbackStore` 按消息分文件原子存储，按钮回调在 agent 路由前
+独立处理，回调返回共享卡片更新，高亮最近投票人的选择并展开绑定用户的卡内原因表单。详见 [FEEDBACK.md](FEEDBACK.md)。
+
+The optional feedback layer decorates content sends, stores per-item records
+atomically, and handles callbacks outside agent execution. Callback responses update
+the shared card with the latest named selection, a horizontal vote-button row, counts
+and a voter-bound inline form. Saved reason previews include the author’s name.
+Name resolution uses the SDK roster cache with an 800ms deadline; the input/server
+validation both enforce Feishu’s 1000-character maximum. Control cards and streaming updates retain their flow.
+
+`feedback/loop.ts` consumes atomic repair intents through a private durable outbox and cross-process worker lock.
+`feedback/generate.ts` calls the host LLM directly with no tools or agent dispatcher. `feedback/screen.ts` validates
+model proposals before `feedback/memory.ts` writes scoped Mnemon stores with receipts. Only the matching
+profile/workspace/chat/actor store is recalled into subsequent inbound tasks. See [FEEDBACK_LOOPS.md](FEEDBACK_LOOPS.md).
+
+`src/learning/` adapts root-agent lifecycle events into the shared feedback worker. Transport-backed attribution, idle activity gates, a private evidence/lesson journal and native retirement recovery keep learning separate from answering. See [conversation learning](CONVERSATION_LEARNING.md).

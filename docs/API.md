@@ -646,17 +646,23 @@ ACP `PromptResponse.usage` 提供该 ACP session 的累计 input/output/cache，
   消息预览。模块递归提取 button callback value 并要求两种语言严格相同，否则 fail closed。
   `bilingualMarkdown(zhCn,enUs)` 用于服务端无法获得每位读者 locale 的 Markdown/toast/旧客户端降级；
   `DSH_LARK_REPLY_LANG=zh|en|both` 可选择进程级纯文本回退语言，默认 `both`。
-  variant 只翻译 bot 固定文案，agent 回答、用户问题与 option 原文不改写；原始推理与工具参数/结果
-  不进入过程卡。
+  variant 只翻译 bot 固定文案，agent 回答、用户问题与 option 原文不改写；原始推理、完整工具参数与结果正文
+  不进入过程卡。处理记录仅允许下述经过筛选的资料元数据。
 
 - `src/card/run-renderer.ts`：`renderCard(state, density)`，三档 `compact / standard / detailed`；
   主区展示非技术进度（查找资料、阅读资料、整理回答等），schema 2.0 `collapsible_panel` 默认收起，
-  保留最多八个最新处理步骤。工具类别使用固定文案映射，未知工具显示“正在处理任务”，不猜测参数中的用途。
-  所有密度及 legacy 卡均以单个 Markdown 段落内的 `text_tag` 彩色标签展示模型、耗时、已上报 token 与工具调用次数（按独立调用 ID 计数，包含失败调用，零次也显示）；标签不主动换行，窄屏由飞书自动折行；原始工具名、reasoning、工具输入输出、草稿正文、adapter 错误和
+  保留最多八条最新、有资料信息的处理记录。`progress-details.ts` 从检索/阅读工具的指定字段提取检索词、
+  文档文件名或 URL 主机与末段路径，以及结构化 JSON/MCP 结果数组的数量和最多三个标题。
+  路径不显示父目录，URL 不显示用户名、密码、查询参数与 fragment；敏感名称过滤，文本脱敏、转义并限长。
+  非结构化结果不推断数量或结论；`bash/exec_command/shell/python` 仅展示调用自带的 `description`，
+  不读取命令或输出生成说明。另展示最新一次成功 `todo_write` 保存的计划及状态，避免重复列出每次计划更新。
+  记忆写入、技能加载和无说明的操作不占据记录区，仍计入底部工具总次数；失败的其他操作单独提示数量。
+  legacy 卡保留简洁状态与指标，不展开资料详情。
+  所有密度及 legacy 卡均以单个 Markdown 段落内的 `text_tag` 彩色标签展示模型、耗时、已上报 token 与工具调用次数（按独立调用 ID 计数，包含失败调用，零次也显示）；标签不主动换行，窄屏由飞书自动折行；原始工具名、reasoning、完整工具输入输出、草稿正文、adapter 错误和
   delivery 错误不得进入任一卡片密度、`config.summary` 或兼容快照。若平台拒绝
   `collapsible_panel`，run-flow / guardian 会重试具有相同隐私边界的 legacy 流式卡。正常卡片正文
   不承载最终回答；仅当独立最终消息发送失败时，才把原本就面向用户的最终回答回填卡片。相同 tool id 的
-  增量与完成事件归并为同一条记录；过程过长时以完整本地化卡片的 28,000 字符预算动态隐藏较早的
+  增量与完成事件归并为同一条记录；过程过长时以完整本地化卡片的 28,000 UTF-8 字节预算动态隐藏较早的
   工具记录、保留最新记录，避免工具轨迹膨胀后被飞书以 `230099` 拒绝。
 - `src/card/run-state.ts`：`reduce(state, event)` 状态机；`usage` 字段由 `usage` 事件更新；
   `finalDeliveryError` 记录独立最终消息的发送失败并在过程卡显式展示。

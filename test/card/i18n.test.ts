@@ -77,8 +77,8 @@ describe('card i18n', () => {
   it('keeps a bilingual protocol fallback on the legacy run card', () => {
     const card = renderLegacyCard(initialState) as Record<string, any>;
     const content = card.body.elements[0].content as string;
-    expect(content).toContain('执行状态');
-    expect(content).toContain('Execution status');
+    expect(content).toContain('正在分析问题');
+    expect(content).toContain('Considering your request');
   });
 
   it('translates only fixed config chrome and preserves dynamic values', () => {

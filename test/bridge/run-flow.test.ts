@@ -488,6 +488,33 @@ describe('runAgentBatch', () => {
     expect(fake.updates.length).toBeGreaterThan(2);
   });
 
+  it.each(['provider/runtime-model', 'openai/gpt-oss-120b'])('measures the entire request through delivery with model %s', async (runtimeModel) => {
+    let clock = 10_000;
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+    const fake = makeChannel();
+    try {
+      await runAgentBatch({
+        scope: 'chat-timing', chatId: 'chat-timing', messages: ['hello'],
+        requestReceivedAtMs: 1_000, provider: 'provider', model: 'selected',
+        adapter: fakeAdapter([
+          { type: 'system', sessionId: undefined, cwd: '/tmp/project', model: runtimeModel },
+          { type: 'final_text', content: 'answer' },
+          { type: 'usage', inputTokens: 12, outputTokens: 3 },
+          { type: 'done', sessionId: 'session-timing', terminationReason: 'normal' },
+        ]),
+        sessions: new SessionStore(':memory:'), workspaces: new WorkspaceStore(':memory:'),
+        activeRuns: new ActiveRuns(), channel: fake.channel, defaultWorkspace: '/tmp/project',
+        deliverFinalReply: async () => { clock = 16_500; },
+      });
+      const final = JSON.stringify(fake.updates.at(-1));
+      expect(final).toContain('总耗时 15.5s');
+      expect(final).toContain(runtimeModel.startsWith('provider/') ? runtimeModel : `provider/${runtimeModel}`);
+      expect(final).not.toContain('provider/provider/');
+      expect(final).toContain('输入 12');
+      expect(final).toContain('输出 3');
+    } finally { spy.mockRestore(); }
+  });
+
   it('records real usage and context events for the current scope session', async () => {
     const sessions = new SessionStore(':memory:');
     await runAgentBatch({

@@ -5,6 +5,8 @@ import { log } from '../core/logger.js';
 export type JobState = 'queued' | 'running' | 'completed' | 'failed' | 'interrupted';
 
 export interface DurableQueuedMessage {
+  /** Local handler-entry time, captured before routing and memory recall. */
+  requestReceivedAtMs?: number;
   messageId: string;
   scope: string;
   workspaceCwd: string;

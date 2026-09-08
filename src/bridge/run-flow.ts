@@ -84,6 +84,7 @@ export interface RunFlowInput {
   /** Provider route resolved from `model` (hot-switch support). */
   provider?: string;
   model?: string;
+  requestReceivedAtMs?: number;
   /** Snapshotted when this run starts; later /mode changes affect only later runs. */
   executionMode?: ExecutionMode;
   stopGraceMs?: number;
@@ -119,6 +120,7 @@ export interface RunFlowInput {
 export type RunBatchOutcome = 'completed' | 'failed' | 'interrupted';
 
 export async function runAgentBatch(input: RunFlowInput): Promise<RunBatchOutcome> {
+  input = { ...input, requestReceivedAtMs: input.requestReceivedAtMs ?? Date.now() };
   const replyOptions = input.replyTo ? { replyTo: input.replyTo } : {};
 
   const activeBefore = input.activeRuns.count(input.scope);
@@ -279,6 +281,8 @@ async function runAttempt(
   let state: RunState = {
     ...initialState,
     startedAtMs: now,
+    requestReceivedAtMs: input.requestReceivedAtMs,
+    model: modelRoute(input.provider, input.model),
     lastActivityMs: now,
     scopeOwner: input.scopeOwner,
     actionScope: input.scope,
@@ -511,6 +515,10 @@ async function runAttempt(
               // bubble (a no-op when nothing was buffered).
               await flushInterim();
             }
+            if (event.type === 'system') {
+              activeModel = modelRoute(input.provider, event.model ?? input.model);
+              state = { ...state, model: activeModel };
+            }
             if (event.type === 'system' && event.sessionId) {
               activeSessionId = event.sessionId;
               activeModel = modelRoute(input.provider, event.model ?? input.model);
@@ -667,6 +675,8 @@ async function runAttempt(
               await safeUpdate();
             }
           }
+          state = { ...state, completedAtMs: Date.now() };
+          await safeUpdate();
         } finally {
           clearInterval(ticker);
           clearInterimTimer();
@@ -828,7 +838,7 @@ function terminalOutcome(terminal: Exclude<RunState['terminal'], 'running'>): Ru
 
 function modelRoute(provider: string | undefined, model: string | undefined): string | undefined {
   if (model === undefined) return undefined;
-  return provider === undefined ? model : `${provider}/${model}`;
+  return provider === undefined || model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
 }
 
 async function pruneArchives(input: RunFlowInput, workspaceCwd: string): Promise<void> {

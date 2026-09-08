@@ -343,7 +343,7 @@ TUI/WebUI 的 active session 不参与 binding 决策。
     半开连接（TCP 仍 ESTABLISHED 但飞书不再投递）被识别后强制重连新 WS generation，`onUnrecoverable`
     时引擎以非零状态退出、交由受管 service / guardian 重启。`/safemode` 进入仅核心
    安全模式：优先预置 `~/.dsh/profiles/<profile>-safe-sdk`（官方 `dsh-base` +
-   `dsh-sdk-jsonrpc-server`，无第三方插件）以获得与正常模式一致、仅展示阶段 / 耗时 / 工具名与状态的
+   `dsh-sdk-jsonrpc-server`，无第三方插件）以获得与正常模式一致、仅展示友好阶段 / 耗时 / 步骤状态的
    原生折叠过程卡和独立最终回答；turn 正常结束但存在失败工具时只把用户可见汇总标为
    “已完成（含警告）”，不改变 completed job terminal，真正的 run failure 仍独立显示。SDK runtime 不可用时回退 `~/.dsh/profiles/<profile>-safe`
    （`dsh-base` + `dsh-headless`）并以活动状态卡兜底；单任务空闲超时（默认 10 分钟，
@@ -463,3 +463,7 @@ model proposals before `feedback/memory.ts` writes scoped Mnemon stores with rec
 profile/workspace/chat/actor store is recalled into subsequent inbound tasks. See [FEEDBACK_LOOPS.md](FEEDBACK_LOOPS.md).
 
 `src/learning/` adapts root-agent lifecycle events into the shared feedback worker. Transport-backed attribution, idle activity gates, a private evidence/lesson journal and native retirement recovery keep learning separate from answering. See [conversation learning](CONVERSATION_LEARNING.md).
+
+## 此 fork：面向普通用户的进度卡
+
+过程卡把工具标识映射为固定的用户文案，主区只显示当前阶段，折叠区保留最近步骤。指标区使用同一段落内的彩色标签；模型与 token 来自现有运行事件，工具次数按独立调用 ID 计数；入站账本时间沿 `runAgentBatch` 传递，最终回答发送结束后固定总耗时。兼容卡保留相同指标和停止操作。详见 [API 卡片渲染](API.md)。

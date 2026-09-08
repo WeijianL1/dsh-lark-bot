@@ -183,3 +183,7 @@ See [Message feedback](docs/FEEDBACK.md) for coverage, access and storage.
 Optional [feedback loops](docs/FEEDBACK_LOOPS.md) revise text answers after reason submission and review feedback daily for scoped Mnemon memory reused in subsequent conversations.
 
 Optional [conversation learning](docs/CONVERSATION_LEARNING.md) unifies natural-language feedback and vote evidence with scoped Mnemon memory.
+
+## Friendly progress cards (this fork)
+
+Progress cards show everyday-language activities with collapsed recent steps, plus an inline row of colored tags for model, elapsed time, reported tokens and tool-call count (distinct call IDs, including failed calls). Total time covers bridge receipt through final-answer delivery, including queueing and processing; tokens retain the latest runtime-report semantics.

@@ -180,3 +180,7 @@ npx dsh-lark-bot@latest upgrade --profile dsh-lark --yes   # 升级（或飞书�
 可选开启提交差评原因后自动修正文字回答，以及每天筛选反馈写入独立 Mnemon 记忆，并在后续同范围对话中读回。见 [反馈闭环](docs/FEEDBACK_LOOPS.md)。
 
 可选的[对话学习](docs/CONVERSATION_LEARNING.md)支持从后续聊天提取有来源的长期偏好，与按钮反馈共用 Mnemon 队列。
+
+## 友好进度卡（此 fork）
+
+运行中显示“正在查找资料”“正在阅读资料”等进度，处理步骤默认折叠。底部用同一横排的彩色标签显示模型、总耗时、token 用量与工具调用次数（按独立调用 ID 计数，包含失败的调用）。总耗时包含机器人接收后的排队、处理和发送回答；token 保持运行时最近一次上报口径。

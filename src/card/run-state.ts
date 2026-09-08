@@ -18,6 +18,12 @@ export type FooterStatus = 'thinking' | 'tool_running' | 'streaming' | null;
 export type Terminal = 'running' | 'done' | 'interrupted' | 'error' | 'idle_timeout';
 
 export interface RunState {
+  /** Selected/runtime-reported route for this request. */
+  model?: string | undefined;
+  /** Durable bridge receipt time, including queue and attachment preparation. */
+  requestReceivedAtMs?: number | undefined;
+  /** Frozen after final-answer delivery settles. */
+  completedAtMs?: number;
   blocks: Block[];
   reasoning: { content: string; active: boolean };
   usage: { inputTokens: number | undefined; outputTokens: number | undefined } | undefined;

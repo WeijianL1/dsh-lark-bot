@@ -21,8 +21,34 @@ describe('renderCard', () => {
     };
     const card = renderCard(state, 'standard', now) as { body: { elements: unknown[] } };
     const text = JSON.stringify(card.body.elements);
-    expect(text).toContain('⏱ 65s');
+    expect(text).toContain('⏱ 处理耗时 1m 5s');
     expect(text).toContain('无响应 65s');
+  });
+
+  it.each(['compact', 'standard', 'detailed'] as const)('keeps %s completion metrics frozen, even without tokens or an answer', (density) => {
+    const state = { ...initialState, terminal: 'done' as const, footer: null,
+      model: 'openai-codex/gpt-5.6-sol', requestReceivedAtMs: 1_000,
+      startedAtMs: 3_000, completedAtMs: 13_340, lastActivityMs: 10_000 };
+    for (const card of [renderCard(state, density, 99_000), renderLegacyCard(state, density, 99_000)]) {
+      const text = JSON.stringify(card);
+      expect(text).toContain('openai-codex/gpt-5.6-sol');
+      expect(text).toContain('总耗时 12.3s');
+      expect(text).toContain('Total time 12.3s');
+      expect(text).not.toContain('Tokens');
+    }
+  });
+
+  it('shows friendly active progress in summaries and contains no raw tool identifiers', () => {
+    const state = reduce(initialState, { type: 'tool_use', id: 'tool1', name: 'mcp__pkulaw__search', input: { query: 'private' } });
+    for (const card of [renderCard(state), renderLegacyCard(state)]) {
+      const text = JSON.stringify(card);
+      expect(text).toContain('正在查找资料');
+      expect(text).not.toContain('mcp__pkulaw__search');
+      expect(text).not.toContain('private');
+    }
+    const unknown = reduce(initialState, { type: 'tool_use', id: 'tool2', name: 'exec_command', input: { cmd: 'ocr private.pdf' } });
+    expect(JSON.stringify(renderCard(unknown))).toContain('正在处理任务');
+    expect(JSON.stringify(renderCard(unknown))).not.toContain('正在识别文档');
   });
 
   it('marks the owner of a member-isolated group run', () => {
@@ -46,7 +72,7 @@ describe('renderCard', () => {
     };
     const panel = running.body.elements.find((element) => element.tag === 'collapsible_panel');
     expect(panel).toMatchObject({ tag: 'collapsible_panel', expanded: false });
-    expect(JSON.stringify(panel)).toContain('read');
+    expect(JSON.stringify(panel)).toContain('阅读资料');
     expect(JSON.stringify(panel)).not.toContain('inspect the code');
     expect(JSON.stringify(panel)).not.toContain('src');
     expect((running as unknown as { config: { summary: { content: string } } }).config.summary.content)
@@ -60,9 +86,9 @@ describe('renderCard', () => {
     expect(JSON.stringify(standard.body.elements)).not.toContain('file contents');
     expect(standard.config.summary.content).not.toContain('file contents');
     const topLevelFallback = standard.body.elements.find(
-      (element) => element.tag === 'markdown' && JSON.stringify(element).includes('执行状态'),
+      (element) => element.tag === 'markdown' && JSON.stringify(element).includes('正在分析问题'),
     );
-    expect(JSON.stringify(topLevelFallback)).toContain('read');
+    expect(JSON.stringify(topLevelFallback)).not.toContain('read');
 
     state = reduce(state, { type: 'done', sessionId: 's1', terminationReason: 'normal' });
     const finished = renderCard(state, 'detailed') as {
@@ -141,7 +167,7 @@ describe('renderCard', () => {
       renderLegacyCard(state),
     ]) {
       const serialized = JSON.stringify(card);
-      expect(serialized).toContain('read');
+      expect(serialized).not.toContain('read');
       expect(serialized).not.toMatch(/PRIVATE_(?:REASONING|INPUT|OUTPUT|DRAFT)_CANARY/);
       expect(serialized).not.toContain('/Users/example/.config');
     }
@@ -183,7 +209,7 @@ describe('renderCard', () => {
     expect(JSON.stringify(panel)).toContain('正在处理请求');
     expect(JSON.stringify(panel)).not.toContain('BEGIN-');
     expect(JSON.stringify(panel)).not.toContain('-LATEST');
-    const snapshot = card.body.elements.find((element) => JSON.stringify(element).includes('执行状态'));
+    const snapshot = card.body.elements.find((element) => JSON.stringify(element).includes('正在分析问题'));
     expect(JSON.stringify(snapshot)).not.toContain('-LATEST');
   });
 
@@ -209,14 +235,14 @@ describe('renderCard', () => {
 
       const serialized = JSON.stringify(renderCard(state, density));
       expect(serialized.length).toBeLessThanOrEqual(28_000);
-      expect(serialized).toContain('tool-LATEST');
+      expect(serialized).not.toContain('tool-LATEST');
       expect(serialized).not.toContain('tool-OLDEST');
-      expect(serialized).toContain('较早的工具调用');
-      expect(serialized).toContain('older tool calls');
+      expect(serialized).toContain('较早的步骤');
+      expect(serialized).toContain('earlier steps');
     },
   );
 
-  it('bounds legacy cards and explicitly counts hidden tool history', () => {
+  it('keeps legacy cards concise without exposing tool identifiers', () => {
     let state = initialState;
     for (let index = 0; index < 120; index += 1) {
       state = reduce(state, {
@@ -235,10 +261,9 @@ describe('renderCard', () => {
 
     const serialized = JSON.stringify(renderLegacyCard(state));
     expect(serialized.length).toBeLessThanOrEqual(28_000);
-    expect(serialized).toContain('legacy-119-');
+    expect(serialized).not.toContain('legacy-119-');
     expect(serialized).not.toContain('legacy-0-');
-    expect(serialized).toContain('较早的工具调用');
-    expect(serialized).toContain('older tool calls');
+    expect(serialized).toContain('正在分析问题');
     expect(serialized).not.toContain('PRIVATE_INPUT_');
     expect(serialized).not.toContain('PRIVATE_OUTPUT_');
   });

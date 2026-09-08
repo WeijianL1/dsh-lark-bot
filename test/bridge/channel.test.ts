@@ -22,7 +22,7 @@ import {
   type DshProviderManagerOptions,
 } from '../../src/config/dsh-config.js';
 import { ConfigStore } from '../../src/config/profile-store.js';
-import { startChannel } from '../../src/bridge/channel.js';
+import { startChannel, queuedMessageFromDurable } from '../../src/bridge/channel.js';
 import { SessionStore } from '../../src/session/store.js';
 import { WorkspaceStore } from '../../src/workspace/store.js';
 import { tmpdir } from 'node:os';
@@ -1409,6 +1409,7 @@ describe('startChannel', () => {
     });
 
     const handle = fake.handlers.message as (msg: NormalizedMessage) => Promise<void>;
+    const ingressBefore = Date.now();
     await handle(message({ messageId: 'durable-message', content: 'Please review the checkout failure and propose a safe fix.' }));
     await handle(message({ messageId: 'durable-message', content: 'Please review the checkout failure and propose a safe fix.' }));
     await handle(message({ messageId: 'near-duplicate', content: 'Please review the checkout failure, and propose a safe fix!' }));
@@ -1417,6 +1418,10 @@ describe('startChannel', () => {
     expect(jobs.queued()[0]?.message).toMatchObject({
       messageId: 'durable-message', scope: 'chat-1', workspaceCwd: '/tmp/project',
     });
+    const durable = jobs.queued()[0]!;
+    expect(durable.message.requestReceivedAtMs).toBeGreaterThanOrEqual(ingressBefore);
+    expect(durable.message.requestReceivedAtMs).toBeLessThanOrEqual(durable.receivedAt);
+    expect(queuedMessageFromDurable(durable.message).requestReceivedAtMs).toBe(durable.message.requestReceivedAtMs);
     expect(pending.push).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(fake.sent.at(-1)?.input)).toContain('近似重复任务');
   });

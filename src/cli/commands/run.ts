@@ -571,6 +571,8 @@ export async function startBridgeEngine(
           scope,
           chatId: first.chatId,
           messages,
+          requestReceivedAtMs: Math.min(...selected.map((message) =>
+            message.requestReceivedAtMs ?? jobs.get(message.messageId, scope, message.workspaceCwd)?.receivedAt ?? Date.now())),
           adapter,
           sessions,
           workspaces,

@@ -22,8 +22,8 @@ describe('renderCard densities', () => {
     const compactJson = JSON.stringify(compact);
     const standardJson = JSON.stringify(standard);
     const detailedJson = JSON.stringify(detailed);
-    expect(compactJson).not.toContain('tokens');
-    expect(standardJson).toContain('tokens');
+    expect(compactJson).toContain('Tokens');
+    expect(standardJson).toContain('Tokens');
     expect(detailedJson.length).toBeGreaterThanOrEqual(standardJson.length);
   });
 
@@ -47,7 +47,7 @@ describe('renderCard densities', () => {
       body: { elements: Array<{ content?: string }> };
     };
     expect(
-      card.body.elements.some((element) => element.content?.includes('tokens')),
+      card.body.elements.some((element) => element.content?.includes('Tokens')),
     ).toBe(true);
   });
 });

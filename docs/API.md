@@ -650,8 +650,9 @@ ACP `PromptResponse.usage` 提供该 ACP session 的累计 input/output/cache，
   不进入过程卡。
 
 - `src/card/run-renderer.ts`：`renderCard(state, density)`，三档 `compact / standard / detailed`；
-  schema 2.0 `collapsible_panel` 只展示阶段、耗时、工具名与状态，运行时展开、结束后默认收起；
-  detailed 可展示更多工具项与 token usage，但原始 reasoning、工具输入输出、草稿正文、adapter 错误和
+  主区展示非技术进度（查找资料、阅读资料、整理回答等），schema 2.0 `collapsible_panel` 默认收起，
+  保留最多八个最新处理步骤。工具类别使用固定文案映射，未知工具显示“正在处理任务”，不猜测参数中的用途。
+  所有密度及 legacy 卡均以单个 Markdown 段落内的 `text_tag` 彩色标签展示模型、耗时、已上报 token 与工具调用次数（按独立调用 ID 计数，包含失败调用，零次也显示）；标签不主动换行，窄屏由飞书自动折行；原始工具名、reasoning、工具输入输出、草稿正文、adapter 错误和
   delivery 错误不得进入任一卡片密度、`config.summary` 或兼容快照。若平台拒绝
   `collapsible_panel`，run-flow / guardian 会重试具有相同隐私边界的 legacy 流式卡。正常卡片正文
   不承载最终回答；仅当独立最终消息发送失败时，才把原本就面向用户的最终回答回填卡片。相同 tool id 的
@@ -659,6 +660,10 @@ ACP `PromptResponse.usage` 提供该 ACP session 的累计 input/output/cache，
   工具记录、保留最新记录，避免工具轨迹膨胀后被飞书以 `230099` 拒绝。
 - `src/card/run-state.ts`：`reduce(state, event)` 状态机；`usage` 字段由 `usage` 事件更新；
   `finalDeliveryError` 记录独立最终消息的发送失败并在过程卡显式展示。
+  `model` 保存选择或运行时报告的模型路由；`requestReceivedAtMs` 是批次最早的本地消息处理入口时间（持久化于消息账本，旧记录回退到入队时间），
+  `completedAtMs` 在最终回答发送结束（含失败）后固定。总耗时包括排队、附件准备、审批等待、模型和工具处理、
+  最终发送；不包括用户到飞书服务器的网络延迟。没有入站时间的调用方显示“处理耗时”，模型缺失显示“未提供”。
+  token 保持 adapter 最近一次上报口径（SDK 为最近模型调用），不伪造整次请求累计 token。
 - `src/card/status-card.ts`：纯 `renderStatusCard(input)` / `statusCardMarkdown(input)`；展示
   workspace/cwd、有效模型、session、当前 workspace runs、版本、context used/limit/percentage、累计四类 token
   与工具权限策略、待审批/提问/计划数、持久任务账本统计。refresh value 固化 scope/isolation；`src/bridge/channel.ts` 复用 member

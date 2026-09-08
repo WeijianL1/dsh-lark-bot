@@ -66,7 +66,7 @@ import type { SecretRequestRegistry } from '../secret/registry.js';
 import { renderSecretCard } from '../card/secret-card.js';
 import type { ChannelUpdateController } from '../upgrade/channel-update.js';
 
-export type QueuedMessage = NormalizedMessage & { workspaceCwd: string };
+export type QueuedMessage = NormalizedMessage & { workspaceCwd: string; requestReceivedAtMs?: number };
 
 /** Default SDK liveness ping timeout (seconds) before a stuck WS is reconnected. */
 export const DEFAULT_CHANNEL_PING_TIMEOUT_SEC = 30;
@@ -291,6 +291,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     msg: NormalizedMessage,
     alreadyClaimed = false,
   ): Promise<void> => {
+    const requestReceivedAtMs = Date.now();
     channelHealth.observeMessage();
     if (groupPoller && !alreadyClaimed && !groupPoller.claim(msg.messageId)) return;
     const chatMode = msg.chatMode ?? msg.chatType;
@@ -543,8 +544,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
             ...msg,
             content: `[来自可信机器人 ${msg.senderName ?? msg.senderId} 的交接]\n${msg.content}`,
             workspaceCwd,
+            requestReceivedAtMs,
           }
-        : { ...userMessage, workspaceCwd };
+        : { ...userMessage, workspaceCwd, requestReceivedAtMs };
       if (deps.jobs) {
         const durableMessage = durableMessageFor(queuedMessage, scope);
         const dedupeWindowMs = deps.replyPolicies?.get(scope).dedupeWindowMs ?? 0;
@@ -1024,6 +1026,7 @@ function durableMessageFor(message: QueuedMessage, scope: string): DurableQueued
     ...(message.threadId ? { threadId: message.threadId } : {}),
     ...(message.replyToMessageId ? { replyToMessageId: message.replyToMessageId } : {}),
     createTime: message.createTime,
+    ...(message.requestReceivedAtMs !== undefined ? { requestReceivedAtMs: message.requestReceivedAtMs } : {}),
   };
 }
 
@@ -1047,6 +1050,7 @@ export function queuedMessageFromDurable(message: DurableQueuedMessage): QueuedM
     ...(message.threadId ? { threadId: message.threadId } : {}),
     ...(message.replyToMessageId ? { replyToMessageId: message.replyToMessageId } : {}),
     createTime: message.createTime,
+    ...(message.requestReceivedAtMs !== undefined ? { requestReceivedAtMs: message.requestReceivedAtMs } : {}),
     workspaceCwd: message.workspaceCwd,
   };
 }

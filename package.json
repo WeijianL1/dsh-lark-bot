@@ -57,6 +57,9 @@
   "files": [
     "dist",
     "bin",
+    "ocr-requirements.txt",
+    "src/media/pdf-ocr-worker.py",
+    "skills/pdf-ocr",
     "cordis.patch.yml",
     "dsh-plugin.json",
     "README.md",

@@ -95,4 +95,33 @@ describe('PendingQueue', () => {
     releases.forEach((release) => release());
     await vi.advanceTimersByTimeAsync(0);
   });
+  it('contains a failed timer flush and continues queued work in both scopes', async () => {
+    vi.useFakeTimers();
+    let rejectFirst!: (error: Error) => void;
+    const failure = new Error('download rejected');
+    const onFlush = vi.fn(async (_scope: string, batch: string[]) => {
+      if (batch[0] === 'bad') await new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+    });
+    const queue = new PendingQueue(1, onFlush);
+    queue.push('chat-a', 'bad');
+    await vi.advanceTimersByTimeAsync(1);
+    queue.push('chat-a', 'next');
+    queue.push('chat-b', 'other');
+    rejectFirst(failure);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(onFlush.mock.calls).toEqual([
+      ['chat-a', ['bad']], ['chat-b', ['other']], ['chat-a', ['next']],
+    ]);
+    expect(queue.activeFlushes('chat-a')).toBe(0);
+    expect(queue.hasPending('chat-a')).toBe(false);
+  });
+
+  it('still rejects an explicitly awaited flush and releases its slot', async () => {
+    const failure = new Error('download rejected');
+    const queue = new PendingQueue(1000, async () => { throw failure; });
+    queue.push('chat-a', 'bad');
+    await expect(queue.flushNow('chat-a')).rejects.toBe(failure);
+    expect(queue.activeFlushes('chat-a')).toBe(0);
+  });
+
 });

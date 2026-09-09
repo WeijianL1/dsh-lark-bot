@@ -1,3 +1,4 @@
+import { initialState, reduce } from '../../../src/card/run-state.js';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,6 +74,32 @@ describe('translateSessionEvent', () => {
       output: 'ok',
       isError: true,
     });
+  });
+
+  it('counts committed steps once across streaming chunks and retransmissions', () => {
+    const tracker = { emitted: new Set<string>() };
+    const first = { type: 'assistant/message', seq: 5, data: {
+      turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 10 },
+    } };
+    const second = { type: 'assistant/message', seq: 10, data: {
+      turn: 1, step: 2, usage: { inputTokens: 100, outputTokens: 10 },
+    } };
+    const events = [
+      { type: 'assistant/chunk', data: { chunk: { type: 'text-delta', text: 'hi', usage: first.data.usage } } },
+      first, first, { ...first, seq: 6 }, second,
+    ].flatMap((event) => translateSessionEvent(event, tracker));
+    expect(events.filter((event) => event.type === 'usage')).toHaveLength(2);
+    expect(events.reduce(reduce, initialState).usage).toEqual({ inputTokens: 200, outputTokens: 20 });
+    expect(translateSessionEvent(first, { emitted: new Set<string>() })).toHaveLength(1);
+  });
+
+  it('uses sequence identity when step metadata is absent and accepts later usage', () => {
+    const tracker = { emitted: new Set<string>() };
+    expect(translateSessionEvent({ type: 'assistant/message', seq: 1, data: {} }, tracker)).toEqual([]);
+    const event = { type: 'assistant/message', seq: 1, data: { usage: { inputTokens: 5 } } };
+    expect(translateSessionEvent(event, tracker)).toHaveLength(1);
+    expect(translateSessionEvent(event, tracker)).toEqual([]);
+    expect(translateSessionEvent({ ...event, seq: 2 }, tracker)).toHaveLength(1);
   });
 
   it('surfaces usage and turn errors', () => {

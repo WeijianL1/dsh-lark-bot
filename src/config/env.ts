@@ -32,6 +32,9 @@ export interface RuntimeEnv {
   maxTokens: number | undefined;
   /** Long-edge bound (px) applied to inbound images before upload (DSH_LARK_IMAGE_MAX_DIMENSION, default 2000). */
   imageMaxDimension: number;
+  attachmentMaxBytes: number;
+  pdfOcr: boolean;
+  ocrPython: string;
   runTimeoutMs: number;
   stopGraceMs: number;
   /** Opt-in persistent votes on replies and files. */
@@ -41,6 +44,9 @@ export interface RuntimeEnv {
   conversationLearning: boolean;
   /** Opt-in group history polling to receive messages that do not mention the bot. */
   groupNoAt: boolean;
+  smartIntervention: boolean;
+  smartInterventionChats: string[];
+  smartInterventionCooldownMs: number;
   /** Poll interval for group no-at history reads (minimum 1000ms). */
   groupPollMs: number;
   /** Maximum consecutive bot @ handoffs observed by one instance before it stops. */
@@ -304,6 +310,9 @@ export function loadRuntimeEnv(
     provider: nonEmpty(source.DSH_LARK_PROVIDER) ?? DEFAULTS.provider,
     model: nonEmpty(source.DSH_LARK_MODEL) ?? DEFAULTS.model,
     maxTokens: parseMaxTokens(source.DSH_LARK_MAX_TOKENS),
+    pdfOcr: parseBoolean(source.DSH_LARK_PDF_OCR, false),
+    ocrPython: nonEmpty(source.DSH_LARK_OCR_PYTHON) ?? 'python3',
+    attachmentMaxBytes: parseMinOneInt(source.DSH_LARK_ATTACHMENT_MAX_BYTES, 1024 ** 3, 'DSH_LARK_ATTACHMENT_MAX_BYTES'),
     imageMaxDimension: parseMinOneInt(
       source.DSH_LARK_IMAGE_MAX_DIMENSION,
       DEFAULTS.imageMaxDimension,
@@ -315,6 +324,9 @@ export function loadRuntimeEnv(
     feedbackRepair: parseBoolean(source.DSH_LARK_FEEDBACK_REPAIR, false),
     feedbackMemory: parseBoolean(source.DSH_LARK_FEEDBACK_MEMORY, false),
     conversationLearning: parseBoolean(source.DSH_CONVERSATION_LEARNING, false),
+    smartIntervention: parseBoolean(source.DSH_LARK_SMART_INTERVENTION, false),
+    smartInterventionChats: parseDshArgs(source.DSH_LARK_SMART_INTERVENTION_CHATS),
+    smartInterventionCooldownMs: parseIntAtLeast(source.DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS, 180_000, 30_000, 'DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS'),
     groupNoAt: parseBoolean(source.DSH_LARK_GROUP_NO_AT, false),
     groupPollMs: parseIntAtLeast(
       source.DSH_LARK_GROUP_POLL_MS,

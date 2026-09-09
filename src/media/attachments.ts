@@ -7,6 +7,8 @@ import type {
 } from '@larksuite/channel';
 import { detectImageType } from './image-file.js';
 import { downscaleImageIfNeeded } from './image-scale.js';
+import { AttachmentDownloadError, attachmentDownloadError } from './download-error.js';
+import { DownloadLimitError, DownloadHttpError, type DownloadOptions } from './range-download.js';
 
 export interface PreparedAttachments {
   imagePaths: string[];
@@ -16,6 +18,9 @@ export interface PreparedAttachments {
 export interface PrepareAttachmentsOptions {
   /** Long-edge bound (px) for inbound images; oversized images are downscaled proportionally. */
   maxImageDimension?: number;
+  download?: (messageId: string, fileKey: string, type: 'image' | 'file', destination: string, options: DownloadOptions) => Promise<void>;
+  downloadOptions?: DownloadOptions;
+  ocr?: (path: string, fileName: string) => Promise<{ textPath: string; reportPath: string; reviewPages: number[]; totalPages: number }>;
 }
 
 const MAX_TEXT_FILE_BYTES = 256_000;
@@ -42,12 +47,31 @@ export async function prepareAttachments(
     assertSafeMediaName(mediaDir, destination);
     const downloadPath = resource.type === 'image' ? `${destination}.download` : destination;
     assertSafeMediaName(mediaDir, downloadPath);
-    await channel.downloadResourceToFile(
-      message.messageId,
-      resource.fileKey,
-      resource.type,
-      downloadPath,
-    );
+    try {
+      if (options.download) {
+        await options.download(message.messageId, resource.fileKey, resource.type, downloadPath, options.downloadOptions ?? {});
+      } else await channel.downloadResourceToFile(
+        message.messageId,
+        resource.fileKey,
+        resource.type,
+        downloadPath,
+      );
+    } catch (error) {
+      if (options.downloadOptions?.signal?.aborted) throw error;
+      if (error instanceof DownloadLimitError) {
+        throw new AttachmentDownloadError(message.messageId, true,
+          error.message === 'Insufficient space for attachment'
+            ? '服务器剩余空间不足，暂时无法下载附件。 / Insufficient server space to download the attachment.'
+            : '附件超过机器人配置的下载上限，请拆分文件后重新发送。 / Attachment exceeds the configured download limit. Please split it and resend.');
+      }
+      const failure = error instanceof DownloadHttpError
+        ? new AttachmentDownloadError(message.messageId, error.apiCode === 234037)
+        : await attachmentDownloadError(error, message.messageId);
+      // Range downloads own atomic final files and durable partials. A failed
+      // revalidation probe must not delete an already verified cached file.
+      if (!options.download) await rm(downloadPath, { force: true }).catch(() => undefined);
+      throw failure;
+    }
 
     if (resource.type === 'image') {
       try {
@@ -64,8 +88,16 @@ export async function prepareAttachments(
       continue;
     }
 
+    if (options.ocr && /\.pdf$/i.test(resource.fileName ?? '')) {
+      const ocr = await options.ocr(destination, resource.fileName ?? 'PDF');
+      result.textFileNotes.push(`[attachment: ${resource.fileName ?? resource.fileKey}] ${destination}\n` +
+        `[PDF OCR completed: ${ocr.totalPages} pages] Read the extracted text at ${ocr.textPath}; ` +
+        `the page-level report is ${ocr.reportPath}. Do not rerun whole-document OCR. ` +
+        (ocr.reviewPages.length ? `Pages needing review: ${ocr.reviewPages.join(', ')}. Tell the user these pages contain unclear or failed regions; do not claim they were fully read.` : 'No pages were flagged by the OCR quality heuristic; this is not a guarantee of accuracy.'));
+      continue;
+    }
     const info = await stat(destination);
-    if (info.size > MAX_TEXT_FILE_BYTES) {
+    if (info.size > MAX_TEXT_FILE_BYTES || /\.pdf$/i.test(resource.fileName ?? '')) {
       result.textFileNotes.push(`[attachment: ${resource.fileName ?? resource.fileKey}] ${destination}`);
       continue;
     }

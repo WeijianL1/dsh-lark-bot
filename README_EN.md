@@ -186,4 +186,4 @@ Optional [conversation learning](docs/CONVERSATION_LEARNING.md) unifies natural-
 
 ## Friendly progress cards (this fork)
 
-Progress cards show everyday-language activities with collapsed recent steps, plus an inline row of colored tags for model, elapsed time, reported tokens and tool-call count (distinct call IDs, including failed calls). Total time covers bridge receipt through final-answer delivery, including queueing and processing; tokens retain the latest runtime-report semantics.
+Progress cards show everyday-language activities with collapsed search topics, source names and structured result counts/titles; plus the latest saved plan and execution-tool descriptions; opaque supporting operations remain in the tool-count metric, plus an inline row of colored tags for model, elapsed time, reported tokens and tool-call count (distinct call IDs, including failed calls). Total time covers bridge receipt through final-answer delivery, including queueing and processing; tokens retain the latest runtime-report semantics.

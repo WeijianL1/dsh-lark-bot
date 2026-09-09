@@ -30,6 +30,29 @@ async function startServer(deps: {
 }
 
 describe('NotifyServer', () => {
+  it('authenticates OCR requests, rejects invalid pages, and aborts disconnected work', async () => {
+    let workerSignal: AbortSignal | undefined;
+    const ocr = vi.fn(async (_payload, signal?: AbortSignal) => {
+      workerSignal = signal;
+      await new Promise<void>((resolve) => signal!.addEventListener('abort', () => resolve(), { once: true }));
+      return { ok: false, error: 'stopped' };
+    });
+    const server = new NotifyServer({ token: 'token', resolve: () => undefined, send: vi.fn(), ocr, longPollHeartbeatMs: 10 });
+    servers.push(server); await server.start();
+    const url = server.url!.replace('/notify', '/ocr');
+    for (const [token, pages, status] of [['wrong', [1], 401], ['token', [0], 400], ['token', [], 400]] as const) {
+      const response = await fetch(url, { method: 'POST', body: JSON.stringify({ token, sessionId: 'session', path: 'doc.pdf', pages }) });
+      expect(response.status).toBe(status); await response.text();
+    }
+    expect(ocr).not.toHaveBeenCalled();
+    const controller = new AbortController();
+    const response = await fetch(url, { method: 'POST', signal: controller.signal,
+      body: JSON.stringify({ token: 'token', sessionId: 'session', path: 'doc.pdf', pages: [1] }) });
+    const reader = response.body!.getReader();
+    expect((await reader.read()).done).toBe(false);
+    controller.abort();
+    await vi.waitFor(() => expect(workerSignal?.aborted).toBe(true));
+  });
   it('serves authenticated file uploads and validates required fields', async () => {
     const file = vi.fn().mockResolvedValue({ ok: true, fileName: 'report.md', size: 6 });
     const server = new NotifyServer({ token: 'test-token', resolve: () => undefined, send: vi.fn(), file });

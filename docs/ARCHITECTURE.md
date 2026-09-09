@@ -466,4 +466,25 @@ profile/workspace/chat/actor store is recalled into subsequent inbound tasks. Se
 
 ## 此 fork：面向普通用户的进度卡
 
-过程卡把工具标识映射为固定的用户文案，主区只显示当前阶段，折叠区保留最近步骤。指标区使用同一段落内的彩色标签；模型与 token 来自现有运行事件，工具次数按独立调用 ID 计数；入站账本时间沿 `runAgentBatch` 传递，最终回答发送结束后固定总耗时。兼容卡保留相同指标和停止操作。详见 [API 卡片渲染](API.md)。
+过程卡把工具标识映射为固定的用户文案，主区只显示当前阶段，折叠区通过 `progress-details.ts` 保留最近检索主题、资料名称及结构化结果数量/标题，并复用执行工具的独立操作说明及最新成功保存的计划进度。无说明的操作仅保留在指标总数中。不读取命令或结果正文来生成摘要。指标区使用同一段落内的彩色标签；模型来自现有运行事件，token 按 run 累加全部已上报模型调用，SDK/Web 在事件入口按 turn + step（或 seq）去重，工具次数按独立调用 ID 计数；入站账本时间沿 `runAgentBatch` 传递，最终回答发送结束后固定总耗时。兼容卡保留相同指标和停止操作。详见 [API 卡片渲染](API.md)。
+
+## 附件下载错误边界
+
+`PendingQueue` 的定时 flush 捕获并记录 dispatch 异常，释放并发槽并继续后续队列；直接调用 `flushNow` 仍向调用者抛错。dispatch 持久化 failed 终态。`media/download-error.ts` 将 SDK JSON / Buffer / Readable 错误归一为不带 HTTP 配置的错误；读取上限 8192 bytes、超时 1 秒。234037 映射为附件大小超限提示，下载残留尽力清理。通知失败不阻止终态持久化。
+
+## 大文件传输（此 fork）
+
+`media/range-download.ts` 管理有界预检、传输、校验、分块 receipt 与进程内下载去重/并发上限；`media/lark-download.ts` 管理固定域名和认证；`download-progress.ts` 只负责进度卡。dispatch 顺序准备同一批附件，避免某附件失败后其他下载仍在后台推进，并在交给 agent 前移除下载 ActiveRun。下载取消记 interrupted，失败记 failed；已完成分块留给显式重试。剩余下载空间检查预留 64 MiB，不改变已有 media 保留策略。
+
+
+## Deterministic PDF OCR
+
+`prepareAttachments` optionally calls `media/pdf-ocr.ts` before building agent input. The bundled `pdf-ocr-worker.py` is materialized by hash and runs in a cancellable process group. A global semaphore bounds CPU concurrency; the Python coordinator locks the output, validates per-page receipts, recycles a page subprocess every five pages, and writes an aggregate report. `ocr-progress.ts` coalesces JSONL metadata into a source-thread card without blocking processing on card delivery. ActiveRuns owns cancellation across download and OCR; failures retain checkpoints and follow existing durable job retry semantics. See API.md for dependency setup, limits and review heuristics.
+
+
+The single canonical PDF command is `skills/pdf-ocr/scripts/ocr.py`; obsolete CLI aliases and compatibility flags are removed. In a bound Lark session the CLI discovers a private localhost callback and submits to `NotifyServer /ocr`; `media/ocr-handler.ts` checks real workspace roots, captures the session destination, registers a separate cancellable ActiveRun, and calls the same OCR semaphore as attachments. Whitespace heartbeats keep long requests alive, and client disconnection aborts work. Standalone execution uses the same packaged worker. OCR cards show determinate segmented progress and bounded review metadata.
+
+
+## Smart group intervention
+
+`SmartIntervention` receives opt-in unmentioned group text before normal mention gating. It maintains bounded, ephemeral scope/workspace context and uses the existing injected no-tools generator independently of feedback flags. It never enters the task queue. Admin controls persist group overrides atomically. The history poller filters selected groups; authorization, freshness, active-run state and revision/cancellation are checked before delivery. Directed requests retain the normal bridge path and cancel pending interjections. Recent public intervention context is appended to later directed requests within the same scope/workspace.

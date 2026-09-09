@@ -338,3 +338,16 @@ dsh plugin --profile dsh-lark remove dsh-lark-bot
 ```
 
 卸载后 profile 不再加载插件；本地状态保留在 `~/.dsh-lark`，如需清除请先备份再删除该目录。
+
+
+## Optional PDF OCR
+
+For local, resumable PDF OCR, install `ocr-requirements.txt` into a Python 3.11–3.12 environment, then set `DSH_LARK_PDF_OCR=true` and `DSH_LARK_OCR_PYTHON` to that Python executable before starting the bot. See README's “可断点继续的 PDF OCR” section for commands, page limits and cache behavior. Windows uses `Scripts/python.exe`; Linux/macOS use `bin/python`. `/stop` preserves completed pages; retry the original attachment job to continue.
+
+
+To replace a legacy PDF OCR skill, back up the old skill and link the packaged `skills/pdf-ocr` directory into the workspace skill directory. The only command is `scripts/ocr.py`; remove obsolete command aliases. See README for commands and bridge discovery. Run one command for a whole PDF instead of launching manual parallel batches. A bound Feishu session receives an independent progress-bar card; use `--local` explicitly if no card is needed.
+
+
+## Optional smart group replies
+
+Set `DSH_LARK_SMART_INTERVENTION=true` in the host plugin environment, with `DSH_LARK_GROUP_NO_AT=false`. As a configured bot admin, @ the bot with `/intervene on` in the desired group; `/intervene off` disables that group, and `/intervene status` shows its state. Group-history permission and explicit user allowlisting are required. Smart replies are brief, selective, and use no tools; @ the bot for full agent tasks.

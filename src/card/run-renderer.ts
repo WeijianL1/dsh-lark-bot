@@ -1,9 +1,10 @@
-import type { RunState, ToolEntry } from './run-state.js';
+import type { RunState } from './run-state.js';
 import type { CardDensity } from './density.js';
 import { localizedCard, type CardLocale } from './i18n.js';
+import { progressDetail, progressPlan } from './progress-details.js';
 
-// @larksuite/channel rolls over markdown at 30,000 characters to avoid
-// Feishu 230099. Trim tool history against a smaller full-card budget.
+// Keep the complete localized JSON below a conservative transport byte budget,
+// including multibyte query/title/plan text and the three localized copies.
 const RUN_CARD_JSON_BUDGET = 28_000;
 const MAX_VISIBLE_TOOL_CALLS = 8;
 const MAX_OWNER_LENGTH = 160;
@@ -98,14 +99,6 @@ function activityLabel(name: string, locale: CardLocale): string {
   return match ? match[locale === 'zh_cn' ? 1 : 2] : locale === 'zh_cn' ? '正在处理任务' : 'Working on your request';
 }
 
-function toolBlock(tool: ToolEntry, locale: CardLocale): object {
-  const icon = tool.status === 'error' ? '⚠️' : tool.status === 'done' ? '✓' : '◌';
-  const status = tool.status === 'error'
-    ? locale === 'zh_cn' ? '遇到问题' : 'Encountered an issue'
-    : tool.status === 'done' ? locale === 'zh_cn' ? '已完成' : 'Completed' : '';
-  const label = activityLabel(tool.name, locale);
-  return noteMd(`${icon} ${status && locale === 'zh_cn' ? label.replace(/^正在/, '') : label}${status ? ` · ${status}` : ''}`);
-}
 
 function hasAnswer(state: RunState): boolean {
   return state.blocks.some((block) => block.kind === 'text' && block.content.trim() !== '');
@@ -118,27 +111,27 @@ function processElements(
 ): object[] {
   const zh = locale === 'zh_cn';
   const elements: object[] = [];
-  const toolBlocks = state.blocks.filter((block) => block.kind === 'tool');
-  const visibleTools = maxTools === 0 ? [] : toolBlocks.slice(-maxTools);
-  const hiddenTools = toolBlocks.length - visibleTools.length;
-  if (hiddenTools > 0) {
-    elements.push(
-      noteMd(zh
-        ? `_已隐藏 ${hiddenTools} 个较早的步骤，仅显示最新进展_`
-        : `_Hidden ${hiddenTools} earlier steps; showing the latest progress_`),
-    );
+  const tools = state.blocks.filter((block) => block.kind === 'tool');
+  const plan = progressPlan(tools.map((block) => block.tool), locale);
+  if (plan.length) elements.push(markdown(`**${zh ? '计划进度' : 'Plan progress'}**\n${plan.join('\n')}`));
+  const details = tools.flatMap((block) => {
+    const detail = progressDetail(block.tool, locale);
+    return detail ? [detail] : [];
+  });
+  const visible = maxTools === 0 ? [] : details.slice(-maxTools);
+  if (details.length > visible.length) {
+    elements.push(noteMd(zh ? `已隐藏 ${details.length - visible.length} 条较早的处理记录` : `${details.length - visible.length} earlier records hidden`));
   }
-  for (const block of visibleTools) {
-    const tool = block.tool;
-    elements.push(toolBlock(tool, locale));
+  for (const detail of visible) {
+    elements.push(markdown(`**${detail.title}**\n${detail.lines.join('\n')}`));
   }
-  if (elements.length === 0) {
-    elements.push(
-      noteMd(state.terminal === 'running'
-        ? zh ? '_正在处理请求…_' : '_Processing the request…_'
-        : zh ? '_执行过程已结束_' : '_Execution finished_'),
-    );
-  }
+  // Routine setup and repeated plan updates are already counted in the metrics row.
+  const failed = tools.filter((block) => !progressDetail(block.tool, locale) && block.tool.status === 'error').length;
+  if (failed) elements.push(noteMd(zh ? `${failed} 次其他操作未成功。` : `${failed} other operations were unsuccessful.`));
+  if (!elements.length) elements.push(noteMd(zh
+    ? '暂未收到具体操作说明；有进展时会自动更新。'
+    : 'No activity descriptions yet; this updates as work proceeds.'));
+
   return elements;
 }
 
@@ -152,7 +145,7 @@ function thinkingPanel(
     // Secondary progress history stays out of the main reading path.
     expanded: false,
     header: {
-      title: { tag: 'plain_text', content: locale === 'zh_cn' ? '查看处理步骤' : 'View progress steps' },
+      title: { tag: 'plain_text', content: locale === 'zh_cn' ? '查看处理记录' : 'View research activity' },
       icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined' },
       icon_position: 'right',
       icon_expanded_angle: -180,
@@ -422,7 +415,7 @@ function fitToBudget(
 ): object {
   const initialLimit = Math.min(toolCount, MAX_VISIBLE_TOOL_CALLS);
   const initialCard = renderWithToolLimit(initialLimit);
-  if (JSON.stringify(initialCard).length <= RUN_CARD_JSON_BUDGET) return initialCard;
+  if (Buffer.byteLength(JSON.stringify(initialCard), 'utf8') <= RUN_CARD_JSON_BUDGET) return initialCard;
 
   let low = 0;
   let high = initialLimit - 1;
@@ -430,7 +423,7 @@ function fitToBudget(
   while (low <= high) {
     const middle = Math.floor((low + high) / 2);
     const candidate = renderWithToolLimit(middle);
-    if (JSON.stringify(candidate).length <= RUN_CARD_JSON_BUDGET) {
+    if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') <= RUN_CARD_JSON_BUDGET) {
       best = candidate;
       low = middle + 1;
     } else {

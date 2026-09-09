@@ -87,7 +87,11 @@ export class PendingQueue<T> {
       scope,
       setTimeout(() => {
         this.timers.delete(scope);
-        void this.flushNow(scope);
+        // Timer callbacks have no awaiting caller. The dispatch callback owns
+        // durable failure/notification; contain its rejection at this boundary.
+        void this.flushNow(scope).catch((error: unknown) => {
+          log.fail('pending-queue', error, { scope });
+        });
       }, this.quietMs),
     );
   }
@@ -99,3 +103,4 @@ export class PendingQueue<T> {
     this.timers.delete(scope);
   }
 }
+import { log } from '../core/logger.js';

@@ -19,6 +19,7 @@ export default defineConfig([
     format: ['esm'],
     target: 'node22',
     platform: 'node',
+    loader: { '.py': 'text' },
     splitting: false,
     sourcemap: true,
     dts: true,

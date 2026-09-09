@@ -646,24 +646,30 @@ ACP `PromptResponse.usage` 提供该 ACP session 的累计 input/output/cache，
   消息预览。模块递归提取 button callback value 并要求两种语言严格相同，否则 fail closed。
   `bilingualMarkdown(zhCn,enUs)` 用于服务端无法获得每位读者 locale 的 Markdown/toast/旧客户端降级；
   `DSH_LARK_REPLY_LANG=zh|en|both` 可选择进程级纯文本回退语言，默认 `both`。
-  variant 只翻译 bot 固定文案，agent 回答、用户问题与 option 原文不改写；原始推理与工具参数/结果
-  不进入过程卡。
+  variant 只翻译 bot 固定文案，agent 回答、用户问题与 option 原文不改写；原始推理、完整工具参数与结果正文
+  不进入过程卡。处理记录仅允许下述经过筛选的资料元数据。
 
 - `src/card/run-renderer.ts`：`renderCard(state, density)`，三档 `compact / standard / detailed`；
   主区展示非技术进度（查找资料、阅读资料、整理回答等），schema 2.0 `collapsible_panel` 默认收起，
-  保留最多八个最新处理步骤。工具类别使用固定文案映射，未知工具显示“正在处理任务”，不猜测参数中的用途。
-  所有密度及 legacy 卡均以单个 Markdown 段落内的 `text_tag` 彩色标签展示模型、耗时、已上报 token 与工具调用次数（按独立调用 ID 计数，包含失败调用，零次也显示）；标签不主动换行，窄屏由飞书自动折行；原始工具名、reasoning、工具输入输出、草稿正文、adapter 错误和
+  保留最多八条最新、有资料信息的处理记录。`progress-details.ts` 从检索/阅读工具的指定字段提取检索词、
+  文档文件名或 URL 主机与末段路径，以及结构化 JSON/MCP 结果数组的数量和最多三个标题。
+  路径不显示父目录，URL 不显示用户名、密码、查询参数与 fragment；敏感名称过滤，文本脱敏、转义并限长。
+  非结构化结果不推断数量或结论；`bash/exec_command/shell/python` 仅展示调用自带的 `description`，
+  不读取命令或输出生成说明。另展示最新一次成功 `todo_write` 保存的计划及状态，避免重复列出每次计划更新。
+  记忆写入、技能加载和无说明的操作不占据记录区，仍计入底部工具总次数；失败的其他操作单独提示数量。
+  legacy 卡保留简洁状态与指标，不展开资料详情。
+  所有密度及 legacy 卡均以单个 Markdown 段落内的 `text_tag` 彩色标签展示模型、耗时、已上报 token 与工具调用次数（按独立调用 ID 计数，包含失败调用，零次也显示）；标签不主动换行，窄屏由飞书自动折行；原始工具名、reasoning、完整工具输入输出、草稿正文、adapter 错误和
   delivery 错误不得进入任一卡片密度、`config.summary` 或兼容快照。若平台拒绝
   `collapsible_panel`，run-flow / guardian 会重试具有相同隐私边界的 legacy 流式卡。正常卡片正文
   不承载最终回答；仅当独立最终消息发送失败时，才把原本就面向用户的最终回答回填卡片。相同 tool id 的
-  增量与完成事件归并为同一条记录；过程过长时以完整本地化卡片的 28,000 字符预算动态隐藏较早的
+  增量与完成事件归并为同一条记录；过程过长时以完整本地化卡片的 28,000 UTF-8 字节预算动态隐藏较早的
   工具记录、保留最新记录，避免工具轨迹膨胀后被飞书以 `230099` 拒绝。
 - `src/card/run-state.ts`：`reduce(state, event)` 状态机；`usage` 字段由 `usage` 事件更新；
   `finalDeliveryError` 记录独立最终消息的发送失败并在过程卡显式展示。
   `model` 保存选择或运行时报告的模型路由；`requestReceivedAtMs` 是批次最早的本地消息处理入口时间（持久化于消息账本，旧记录回退到入队时间），
   `completedAtMs` 在最终回答发送结束（含失败）后固定。总耗时包括排队、附件准备、审批等待、模型和工具处理、
   最终发送；不包括用户到飞书服务器的网络延迟。没有入站时间的调用方显示“处理耗时”，模型缺失显示“未提供”。
-  token 保持 adapter 最近一次上报口径（SDK 为最近模型调用），不伪造整次请求累计 token。
+  token 累计本轮全部已上报 LLM step 的 input/output；SDK/Web 只采集已完成的 assistant/message，按 turn + step（缺失时用 seq）去重，流式 chunk 不重复计数。ACP 每个 run 创建新 session，因此其 session 累计值作为该 run 总量。缺失字段不估算；context 占用仍是独立快照，新 run 从零开始。
 - `src/card/status-card.ts`：纯 `renderStatusCard(input)` / `statusCardMarkdown(input)`；展示
   workspace/cwd、有效模型、session、当前 workspace runs、版本、context used/limit/percentage、累计四类 token
   与工具权限策略、待审批/提问/计划数、持久任务账本统计。refresh value 固化 scope/isolation；`src/bridge/channel.ts` 复用 member
@@ -1203,3 +1209,63 @@ card; inline reasons are bound to the voter, token, original chat and feedback m
 每日记忆与范围隔离、回执及失败语义见 [FEEDBACK_LOOPS.md](FEEDBACK_LOOPS.md)。
 
 `ConversationLearningPort` exposes resolve/observe/recall/activity to the host lifecycle adapter. `LearningJournal` owns conversation receipts and versioned lessons; `FeedbackMemory.forget` supports scoped, idempotent native retirement. See [conversation learning](CONVERSATION_LEARNING.md).
+
+### 附件下载失败
+
+`prepareAttachments` 在下载失败时抛出 `AttachmentDownloadError`，包含源 `messageId`、`sizeExceeded` 和中英双语安全提示。仅 API code 234037 被识别为下载大小超限；未知响应返回通用重发提示。dispatch 回复附件源消息（保留 thread），该批次记为 failed，不自动重试。定时队列的异常不传播到宿主进程；显式 `flushNow()` 保留 reject 契约。
+
+### 可恢复附件下载（此 fork）
+
+`createLarkResourceDownloader` 使用固定 Feishu/Lark origin 和内存缓存的 tenant token，禁止重定向。`downloadInRanges` 先请求 `bytes=0-0`，从 `Content-Range` 获取总大小；`DSH_LARK_ATTACHMENT_MAX_BYTES` 默认 1073741824，超限时不消费文件正文。原 IM 接口官方限制与 Range 实测能力不同：Range 不可用时不保证下载大文件。
+
+8 MiB 顺序分块；全局最多同时下载两个文件。每块校验 206、精确范围、总长度及实际字节数，60 秒超时；网络错误/429/5xx 最多重试两次，整次下载最长 30 分钟。401 刷新 token 一次；永久错误不重试。服务器忽略 Range 时，只接受有明确 Content-Length 且不超过一个分块及总大小上限的响应。
+
+同目录 `.part` 与 `.download.json`（0600）保存数据及每块 SHA-256，只有数据 fsync 后才提交进度。重试及完成缓存使用前重新验证本地分块；重启后由 `/jobs retry` 或再次处理同一消息继续下载，不自动重放 agent 的外部操作。无服务器 ETag 的资源以 messageId/fileKey/total 标识；校验和检测本地损坏，不作为远端签名。
+
+下载阶段注册为 ActiveRuns，可 `/stop`，关闭 bridge 也会中止。32 MiB 以上通过源消息/话题中的独立卡片报告进度，卡片发送失败不令下载失败。PDF 始终作为路径交给现有读取工具，避免小 PDF 被 UTF-8 解码。可选的本地 OCR 模块见下文。
+
+
+## 可断点继续的 PDF OCR
+
+设置 `DSH_LARK_PDF_OCR=true` 后，PDF 下载完成会进入插件内的独立 Python OCR 模块，再将 `document.md`、`report.json` 路径和复核页码交给助手。默认关闭，已有安装不会因为缺少 Python 依赖而改变 PDF 行为。启用前，在运行 bot 的用户下安装：
+
+```bash
+python3.12 -m venv ~/.venvs/lark-ocr
+~/.venvs/lark-ocr/bin/python -m pip install -r ocr-requirements.txt
+# 设置在启动 bot 的环境中（systemd 用户需在服务环境设置）
+export DSH_LARK_OCR_PYTHON="$HOME/.venvs/lark-ocr/bin/python"
+export DSH_LARK_PDF_OCR=true
+```
+
+需要 Python 3.11–3.12 和 requirements 中固定版本；Windows 使用对应 venv 的 `Scripts/python.exe`。首次安装需要网络下载依赖/随包模型；处理文档在本机运行。原始 PDF 不被改写。纯文字页直接提取；有大幅扫描图的混合页面执行 OCR，避免只读到页眉。扫描页先按 150 DPI 灰度、JPEG 80 压缩处理；低置信度区域按 300 DPI 重试，保留更可靠的候选文本；仍不清楚的区域/失败页写入复核清单。置信度只是启发式指标，不代表正确率，也不能保证发现所有模糊内容。
+
+进度卡在原附件话题显示当前页、完成页数、高分辨率重试和最终待复核页码范围。发送 `/stop` 会停止进程并保留完成页面；通过现有 job retry 重新处理同一附件任务时复用断点，不会自动重放旧任务。重新上传会产生新的附件路径，不承诺跨附件命中缓存。服务重启后也需显式重试原任务。
+
+每页完成后原子保存带校验和的 JSON，位于 `<原附件路径>.ocr/`；源文件、脚本、策略或依赖版本改变会使旧断点失效。运行时脚本存放于同目录 `.pdf-ocr-runtime/`。一台 bot 进程同时只跑一个 OCR，按页调度，每 5 页回收子进程，每页最多 120 秒、单张渲染最多 1200 万像素、文档最多 5000 页；失败页不阻断其余页面，下次重试会重做失败页。超过页数限制或加密 PDF 会提示未完成。提取文本不进入进度日志；缓存具有和原附件相同的敏感性，清理附件时应一并清理 `.ocr` 目录。
+
+
+### 历史 PDF / 统一 OCR 入口与进度条
+
+随包提供 `skills/pdf-ocr`，唯一命令入口是 `scripts/ocr.py`，直接调用插件的统一 OCR 模块。将整个技能目录链接到 DSH workspace 的技能目录；安装前备份已有同名技能目录并移除已废弃的旧命令入口。技能文件需要保持包内布局，或使用指向包内文件的符号链接。
+```bash
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --output extracted.md
+# 可选明确页码；不需要人工分批并行
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --pages '1-5,8' -o selected.md
+```
+
+飞书 shell 的 `DSH_SESSION_ID` 自动绑定会话；CLI 读取 `<Lark状态根>/profiles/*/ocr-bridge.json`（0600）的本地端点、令牌和 Python 路径，调用已鉴权的 `/ocr`。搜索 `DSH_LARK_HOME`、`DSH_HOME/lark` 和默认 `~/.dsh-lark`，跳过已停止的端点。自定义根目录应显式设置 `DSH_LARK_HOME`。系统 Python 缺少 PyMuPDF 时，会切换到配置的 OCR venv。服务停用时清理属于自己的发现文件。
+
+服务端根据已有 session binding 决定聊天和话题，拒绝工作区之外的文件及符号链接越界；调用者不能指定 chat ID。统一入口与新附件流程共享单任务队列，`/stop` 取消该会话的 OCR，HTTP 连接断开或服务退出也会保存断点后停止。非飞书会话使用同一 Python 引擎本地执行；桥接不可用会提示错误，可明确使用 `--local` 运行而不发卡片。部分页码采用独立的确定性缓存目录，避免并发批次覆盖汇总文本；相同文件和相同页码选择可续跑。
+
+独立 OCR 卡片使用原生 Markdown、彩色分段进度条、百分比、完成/总页数，以及耗时、断点复用和待复核标签；下方分隔展示高清重试和最终复核页码。排队/检查阶段不伪造百分比，暂停保留真实进度。卡片更新失败不会阻断 OCR。卡片语法参考 [飞书 Markdown 文档](https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags)。
+
+
+## 智能介入群聊
+
+`DSH_LARK_SMART_INTERVENTION=true` 启用轻量判断器；`DSH_LARK_SMART_INTERVENTION_CHATS` 设置初始启用群 ID（逗号分隔）。管理员在群里 @ bot 发送 `/intervene on`、`/intervene off`、`/intervene status` 可切换/查询本群，第一次登记群聊时应 @ bot。设置保存在 `<profile>/smart-intervention.json`（0600），持久化覆盖初始环境值。普通成员不能更改设置。现有 `allowedUsers` / `allowedChats` 仍然适用；白名单外用户不会触发判断，设置损坏时保持安静。
+
+未 @ 的文字消息先合并观察 4 秒，每群最多每 30 秒判断一次；使用宿主已配置模型进行不带工具的调用。判断器默认沉默，仅在能给出明确、有用的简短回答或补充时发言。普通寒暄、确认、点名其他成员、附件和无关闲聊不触发任务；缺信息、模型超时或输出无效时不发提示卡。模型判断是启发式，可能漏回或偶尔误判；重要请求仍请 @ bot。
+
+默认群内回复冷却 180 秒，可用 `DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS` 调整，最小 30 秒。重复消息/重复回复被抑制；bot 正忙时不插话；新消息、@ 请求和关闭群开关会取消尚未发出的旧判断。@ 消息直接进入正常 agent 流程，不受自动回复冷却影响。未 @ 的自动补充不读取私人记忆、不下载附件、不执行工具操作，也不声称完成任务。
+
+仅在内存中保留当前 scope/workspace 最近最多 12 条、10 分钟内的白名单对话；成员隔离和话题隔离沿用现有配置。后续 @ 请求会得到同一 scope 的这些公开对话上下文，因此正常 agent 知道 bot 刚才的自动补充。服务重启不回放旧消息。使用现有群消息轮询能力和群历史权限；智能介入启用时优先于旧 `DSH_LARK_GROUP_NO_AT` 开关；没有启用智能介入的群仍要求 @，不会退回逐条回复模式。

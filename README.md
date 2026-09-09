@@ -183,4 +183,54 @@ npx dsh-lark-bot@latest upgrade --profile dsh-lark --yes   # 升级（或飞书�
 
 ## 友好进度卡（此 fork）
 
-运行中显示“正在查找资料”“正在阅读资料”等进度，处理步骤默认折叠。底部用同一横排的彩色标签显示模型、总耗时、token 用量与工具调用次数（按独立调用 ID 计数，包含失败的调用）。总耗时包含机器人接收后的排队、处理和发送回答；token 保持运行时最近一次上报口径。
+运行中显示“正在查找资料”“正在阅读资料”等进度，“处理记录”默认折叠，展开可查看检索主题、阅读资料名和结构化结果的数量/标题；同时显示最新计划进度和调用自带的操作说明；无说明的后台操作仅计入工具总数。底部用同一横排的彩色标签显示模型、总耗时、token 用量与工具调用次数（按独立调用 ID 计数，包含失败的调用）。总耗时包含机器人接收后的排队、处理和发送回答；token 累计本轮所有已上报 LLM step 的 input/output 用量，新一轮从零开始。
+
+## 附件失败隔离（此 fork）
+
+附件下载失败只终止当前批次，不再让后台队列异常退出整个 bridge。附件先通过 Range 探测大小，默认上限 1 GiB；支持 Range 时按 8 MiB 分块下载，记录分块校验和并在重试时续传。超过本地上限或平台拒绝范围请求时给出提示，不重复执行工具。超过 32 MiB 显示下载进度卡，`/stop` 可取消。
+
+
+## 可断点继续的 PDF OCR
+
+设置 `DSH_LARK_PDF_OCR=true` 后，PDF 下载完成会进入插件内的独立 Python OCR 模块，再将 `document.md`、`report.json` 路径和复核页码交给助手。默认关闭，已有安装不会因为缺少 Python 依赖而改变 PDF 行为。启用前，在运行 bot 的用户下安装：
+
+```bash
+python3.12 -m venv ~/.venvs/lark-ocr
+~/.venvs/lark-ocr/bin/python -m pip install -r ocr-requirements.txt
+# 设置在启动 bot 的环境中（systemd 用户需在服务环境设置）
+export DSH_LARK_OCR_PYTHON="$HOME/.venvs/lark-ocr/bin/python"
+export DSH_LARK_PDF_OCR=true
+```
+
+需要 Python 3.11–3.12 和 requirements 中固定版本；Windows 使用对应 venv 的 `Scripts/python.exe`。首次安装需要网络下载依赖/随包模型；处理文档在本机运行。原始 PDF 不被改写。纯文字页直接提取；有大幅扫描图的混合页面执行 OCR，避免只读到页眉。扫描页先按 150 DPI 灰度、JPEG 80 压缩处理；低置信度区域按 300 DPI 重试，保留更可靠的候选文本；仍不清楚的区域/失败页写入复核清单。置信度只是启发式指标，不代表正确率，也不能保证发现所有模糊内容。
+
+进度卡在原附件话题显示当前页、完成页数、高分辨率重试和最终待复核页码范围。发送 `/stop` 会停止进程并保留完成页面；通过现有 job retry 重新处理同一附件任务时复用断点，不会自动重放旧任务。重新上传会产生新的附件路径，不承诺跨附件命中缓存。服务重启后也需显式重试原任务。
+
+每页完成后原子保存带校验和的 JSON，位于 `<原附件路径>.ocr/`；源文件、脚本、策略或依赖版本改变会使旧断点失效。运行时脚本存放于同目录 `.pdf-ocr-runtime/`。一台 bot 进程同时只跑一个 OCR，按页调度，每 5 页回收子进程，每页最多 120 秒、单张渲染最多 1200 万像素、文档最多 5000 页；失败页不阻断其余页面，下次重试会重做失败页。超过页数限制或加密 PDF 会提示未完成。提取文本不进入进度日志；缓存具有和原附件相同的敏感性，清理附件时应一并清理 `.ocr` 目录。
+
+
+### 历史 PDF / 统一 OCR 入口与进度条
+
+随包提供 `skills/pdf-ocr`，唯一命令入口是 `scripts/ocr.py`，直接调用插件的统一 OCR 模块。将整个技能目录链接到 DSH workspace 的技能目录；安装前备份已有同名技能目录并移除已废弃的旧命令入口。技能文件需要保持包内布局，或使用指向包内文件的符号链接。
+```bash
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --output extracted.md
+# 可选明确页码；不需要人工分批并行
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --pages '1-5,8' -o selected.md
+```
+
+飞书 shell 的 `DSH_SESSION_ID` 自动绑定会话；CLI 读取 `<Lark状态根>/profiles/*/ocr-bridge.json`（0600）的本地端点、令牌和 Python 路径，调用已鉴权的 `/ocr`。搜索 `DSH_LARK_HOME`、`DSH_HOME/lark` 和默认 `~/.dsh-lark`，跳过已停止的端点。自定义根目录应显式设置 `DSH_LARK_HOME`。系统 Python 缺少 PyMuPDF 时，会切换到配置的 OCR venv。服务停用时清理属于自己的发现文件。
+
+服务端根据已有 session binding 决定聊天和话题，拒绝工作区之外的文件及符号链接越界；调用者不能指定 chat ID。统一入口与新附件流程共享单任务队列，`/stop` 取消该会话的 OCR，HTTP 连接断开或服务退出也会保存断点后停止。非飞书会话使用同一 Python 引擎本地执行；桥接不可用会提示错误，可明确使用 `--local` 运行而不发卡片。部分页码采用独立的确定性缓存目录，避免并发批次覆盖汇总文本；相同文件和相同页码选择可续跑。
+
+独立 OCR 卡片使用原生 Markdown、彩色分段进度条、百分比、完成/总页数，以及耗时、断点复用和待复核标签；下方分隔展示高清重试和最终复核页码。排队/检查阶段不伪造百分比，暂停保留真实进度。卡片更新失败不会阻断 OCR。卡片语法参考 [飞书 Markdown 文档](https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags)。
+
+
+## 智能介入群聊
+
+`DSH_LARK_SMART_INTERVENTION=true` 启用轻量判断器；`DSH_LARK_SMART_INTERVENTION_CHATS` 设置初始启用群 ID（逗号分隔）。管理员在群里 @ bot 发送 `/intervene on`、`/intervene off`、`/intervene status` 可切换/查询本群，第一次登记群聊时应 @ bot。设置保存在 `<profile>/smart-intervention.json`（0600），持久化覆盖初始环境值。普通成员不能更改设置。现有 `allowedUsers` / `allowedChats` 仍然适用；白名单外用户不会触发判断，设置损坏时保持安静。
+
+未 @ 的文字消息先合并观察 4 秒，每群最多每 30 秒判断一次；使用宿主已配置模型进行不带工具的调用。判断器默认沉默，仅在能给出明确、有用的简短回答或补充时发言。普通寒暄、确认、点名其他成员、附件和无关闲聊不触发任务；缺信息、模型超时或输出无效时不发提示卡。模型判断是启发式，可能漏回或偶尔误判；重要请求仍请 @ bot。
+
+默认群内回复冷却 180 秒，可用 `DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS` 调整，最小 30 秒。重复消息/重复回复被抑制；bot 正忙时不插话；新消息、@ 请求和关闭群开关会取消尚未发出的旧判断。@ 消息直接进入正常 agent 流程，不受自动回复冷却影响。未 @ 的自动补充不读取私人记忆、不下载附件、不执行工具操作，也不声称完成任务。
+
+仅在内存中保留当前 scope/workspace 最近最多 12 条、10 分钟内的白名单对话；成员隔离和话题隔离沿用现有配置。后续 @ 请求会得到同一 scope 的这些公开对话上下文，因此正常 agent 知道 bot 刚才的自动补充。服务重启不回放旧消息。使用现有群消息轮询能力和群历史权限；智能介入启用时优先于旧 `DSH_LARK_GROUP_NO_AT` 开关；没有启用智能介入的群仍要求 @，不会退回逐条回复模式。

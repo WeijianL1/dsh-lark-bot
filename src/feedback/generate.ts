@@ -7,6 +7,7 @@ export interface FeedbackGeneration {
   provider: string;
   model: string;
   signal: AbortSignal;
+  maxTokens?: number;
 }
 export type FeedbackGenerate = (request: FeedbackGeneration) => Promise<string>;
 export interface FeedbackLlmHost {
@@ -25,7 +26,7 @@ export function feedbackGenerator(host: () => FeedbackLlmHost | undefined): Feed
     for await (const chunk of llm.stream({
       provider: request.provider, model: request.model, system: request.system,
       messages: [{ id: randomUUID(), role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: request.prompt }] }],
-      tools: [], maxTokens: 2048, signal: request.signal,
+      tools: [], maxTokens: request.maxTokens ?? 2048, signal: request.signal,
     })) {
       if (request.signal.aborted) throw new Error('Feedback generation cancelled');
       if (chunk.type === 'tool-call-delta') throw new Error('Feedback generation cannot execute tools');

@@ -5,7 +5,7 @@ import { FeedbackTasks } from '../../feedback/tasks.js';
 import { MnemonFeedbackMemory } from '../../feedback/memory.js';
 import type { FeedbackGenerate } from '../../feedback/generate.js';
 import { FeedbackStore } from '../../feedback/store.js';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentAdapter } from '../../adapters/types.js';
@@ -58,6 +58,13 @@ import { DEEPSEEK_PROVIDER, DshProviderManager } from '../../config/dsh-config.j
 import { log } from '../../core/logger.js';
 import { onboardPersonalAgent } from '../../onboard/registration.js';
 import { prepareAttachments } from '../../media/attachments.js';
+import { AttachmentDownloadError } from '../../media/download-error.js';
+import { createLarkResourceDownloader } from '../../media/lark-download.js';
+import { downloadProgress } from '../../media/download-progress.js';
+import { PdfOcrError, runPdfOcr } from '../../media/pdf-ocr.js';
+import { writeFileAtomic } from '../../platform/atomic-write.js';
+import { buildOcrHandler } from '../../media/ocr-handler.js';
+import { ocrProgress } from '../../media/ocr-progress.js';
 import { SessionStore } from '../../session/store.js';
 import { SessionProjectionStore } from '../../session/projection-store.js';
 import { WebSessionProjectionSource } from '../../session/projection-protocol.js';
@@ -372,6 +379,7 @@ export async function startBridgeEngine(
     },
   });
   const notifyToken = generateNotifyToken();
+  const attachmentControllers = new Set<AbortController>();
   const notifyServer = new NotifyServer({
     token: notifyToken,
     resolve: (message) => {
@@ -444,6 +452,18 @@ export async function startBridgeEngine(
         },
       },
     }),
+    ...(env.pdfOcr ? { ocr: buildOcrHandler({
+      binding: async (sessionId) => {
+        const scope = sessions.scopeForSession(sessionId);
+        const workspace = sessions.workspaceForSession(sessionId);
+        const destination = scope ? scopeDirectory.resolve(scope) : undefined;
+        if (!scope || !workspace || !destination?.messageId) return undefined;
+        const executionRoot = (await worktreeManager.ensure(scope, workspace)).cwd;
+        return { scope, workspace, roots: [workspace, executionRoot], chatId: destination.chatId,
+          messageId: destination.messageId, ...(destination.threadId ? { threadId: destination.threadId } : {}) };
+      },
+      channel: () => streaming, activeRuns, controllers: attachmentControllers, python: env.ocrPython,
+    }) } : {}),
     file: buildFileHandler({
       sessions,
       scopeDirectory,
@@ -477,6 +497,7 @@ export async function startBridgeEngine(
   });
   process.env.DSH_LARK_NOTIFY_TOKEN = notifyToken;
 
+  const downloadResource = createLarkResourceDownloader({ ...activeProfile.accounts, tenant: activeProfile.tenant });
   const pending = new PendingQueue<QueuedMessage>(
     DEBOUNCE_MS,
     async (scope, batch) => {
@@ -487,6 +508,9 @@ export async function startBridgeEngine(
       let ledgerState: 'completed' | 'failed' | 'interrupted' = 'failed';
       let ledgerError: string | undefined;
       let ledgerClaimed = false;
+      const attachmentController = new AbortController();
+      const attachmentRunId = `attachment-${randomUUID()}`;
+      attachmentControllers.add(attachmentController);
       try {
         // Merge only messages captured for the same workspace. Messages for a
         // different project keep their immutable snapshot and return to the
@@ -504,15 +528,54 @@ export async function startBridgeEngine(
           channel: streaming,
         });
         if (!ledgerClaimed) return;
-        const prepared = await Promise.all(selected.map(async (message) => ({
-          message,
-          attachments: await prepareAttachments(
-            larkChannel,
-            message,
-            paths.mediaDir(profileName),
-            { maxImageDimension: env.imageMaxDimension },
-          ),
-        })));
+        const prepared: Array<{ message: QueuedMessage; attachments: Awaited<ReturnType<typeof prepareAttachments>> }> = [];
+        if (selected.some((message) => message.resources.length)) {
+          activeRuns.set(scope, { runId: attachmentRunId, workspaceCwd: first.workspaceCwd,
+            stop: async () => { attachmentController.abort(); } });
+        }
+        for (const message of selected) {
+          const progress = downloadProgress(streaming, message);
+          let success = false;
+          let ocrStarted = false;
+          try {
+            attachmentController.signal.throwIfAborted();
+            prepared.push({ message, attachments: await prepareAttachments(
+              larkChannel, message, paths.mediaDir(profileName), {
+                maxImageDimension: env.imageMaxDimension,
+                download: downloadResource,
+                ...(env.pdfOcr ? { ocr: async (path: string, name: string) => {
+                  ocrStarted = true;
+                  await progress.finish(true);
+                  const update = ocrProgress(streaming!, message, name);
+                  let lastCheckpoint = 0;
+                  try {
+                    return await runPdfOcr(path, { python: env.ocrPython, signal: attachmentController.signal,
+                      onEvent: (event) => {
+                        update(event);
+                        if (Date.now() - lastCheckpoint >= 5000) {
+                          lastCheckpoint = Date.now();
+                          void jobs.checkpoint(ledgerMessageIds, { stage: 'starting',
+                            detail: `PDF OCR ${event.done ?? 0}/${event.total ?? '?'}${event.page ? ` page ${event.page}` : ''}`,
+                          }).catch((error: unknown) => log.fail('ocr-checkpoint', error));
+                        }
+                      },
+                    });
+                  } catch (error) {
+                    update({ type: attachmentController.signal.aborted ? 'stopped' : 'fatal' });
+                    if (error instanceof PdfOcrError) error.messageId = message.messageId;
+                    throw error;
+                  }
+                } } : {}),
+                downloadOptions: { maxBytes: env.attachmentMaxBytes, signal: attachmentController.signal,
+                  onProgress: progress.update },
+              },
+            ) });
+            success = true;
+          } finally { if (!ocrStarted) await progress.finish(success); }
+        }
+        attachmentController.signal.throwIfAborted();
+        activeRuns.delete(scope, attachmentRunId);
+        attachmentControllers.delete(attachmentController);
         const messages = prepared.flatMap(({ message, attachments }) => [
           message.content,
           ...attachments.textFileNotes,
@@ -640,9 +703,25 @@ export async function startBridgeEngine(
             ? 'interrupted'
             : 'failed';
       } catch (error) {
+        if (attachmentController.signal.aborted) ledgerState = 'interrupted';
         ledgerError = error instanceof Error ? error.message : String(error);
+        if (error instanceof PdfOcrError) {
+          const source = batch.find((message) => message.messageId === error.messageId) ?? first;
+          await streaming.sendMarkdown(source.chatId, error.message, { replyTo: source.messageId,
+            ...(source.threadId ? { threadId: source.threadId } : {}),
+          }).catch((noticeError: unknown) => log.fail('ocr-notice', noticeError));
+        }
+        if (error instanceof AttachmentDownloadError) {
+          const source = batch.find((message) => message.messageId === error.messageId) ?? first;
+          await streaming.sendMarkdown(source.chatId, error.message, {
+            replyTo: error.messageId,
+            ...(source.threadId ? { threadId: source.threadId } : {}),
+          }).catch((noticeError: unknown) => log.fail('attachment-notice', noticeError));
+        }
         throw error;
       } finally {
+        attachmentControllers.delete(attachmentController);
+        activeRuns.delete(scope, attachmentRunId);
         if (ledgerClaimed) {
           await persistJobTerminalAndNotify({
             jobs,
@@ -736,7 +815,15 @@ export async function startBridgeEngine(
     defaultWorkspace,
     accessDefaultDeny: env.accessDefaultDeny,
     eventFreshnessMs: env.eventFreshnessMs,
-    groupNoAt: env.groupNoAt,
+    ...(env.smartIntervention && options.feedbackGenerate ? { smartIntervention: {
+      chats: env.smartInterventionChats, settingsPath: paths.profilePath(profileName, 'smart-intervention.json'), cooldownMs: env.smartInterventionCooldownMs,
+      generate: async (system: string, prompt: string, signal: AbortSignal) => {
+        const route = await dshConfig.defaultModelSelection();
+        if (!route) throw new Error('Smart intervention requires a configured model');
+        return options.feedbackGenerate!({ system, prompt, signal, maxTokens: 768, ...route });
+      },
+    } } : {}),
+    groupNoAt: env.smartIntervention ? false : env.groupNoAt,
     groupPollMs: env.groupPollMs,
     isTrustedBot: (openId) => fleet.isTrustedPeer(openId, profileName),
     botHandoffMax: env.botHandoffMax,
@@ -878,6 +965,10 @@ export async function startBridgeEngine(
   updateResultTimer.unref?.();
   await recoverDurableJobs(jobRecovery, jobs, pending, streaming);
   await notifyServer.start();
+  const ocrDiscovery = paths.profilePath(profileName, 'ocr-bridge.json');
+  if (env.pdfOcr) {
+    await writeFileAtomic(ocrDiscovery, JSON.stringify({ endpoint: notifyServer.url!.replace(/\/notify$/, '/ocr'), token: notifyToken, python: env.ocrPython }), { mode: 0o600 });
+  } else await rm(ocrDiscovery, { force: true });
   process.env.DSH_LARK_NOTIFY_URL = notifyServer.url ?? '';
   process.env.DSH_LARK_ASK_URL = notifyServer.askUrl ?? '';
   process.env.DSH_LARK_PLAN_URL = notifyServer.planUrl ?? '';
@@ -969,6 +1060,11 @@ export async function startBridgeEngine(
     stop: async () => {
       if (stopped) return;
       stopped = true;
+      for (const controller of attachmentControllers) controller.abort();
+      try {
+        const discovery = JSON.parse(await readFile(ocrDiscovery, 'utf8')) as { token?: string };
+        if (discovery.token === notifyToken) await rm(ocrDiscovery, { force: true });
+      } catch { /* Missing/stale discovery must not prevent shutdown. */ }
       updateNotifier.stop();
       clearInterval(updateResultTimer);
       heartbeat.stop();

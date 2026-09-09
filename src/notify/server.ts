@@ -7,6 +7,7 @@ import type { AskPayload, AskResult } from './ask-handler.js';
 import type { PlanPayload, PlanResult } from './plan-handler.js';
 import type { ApprovalPayload, ApprovalResult } from './approval-handler.js';
 import type { FilePayload, FileResult } from './file-handler.js';
+import type { OcrPayload } from '../media/ocr-handler.js';
 import type { SecretPayload, SecretResult } from './secret-handler.js';
 
 export interface NotifyMessage {
@@ -45,6 +46,7 @@ export interface NotifyServerDeps {
   approval?: (payload: ApprovalPayload, signal?: AbortSignal) => Promise<ApprovalResult>;
   /** Optional handler for the `lark_send_file` channel. */
   file?: (payload: FilePayload) => Promise<FileResult>;
+  ocr?: (payload: OcrPayload, signal?: AbortSignal) => Promise<{ ok: boolean; error?: string; textPath?: string; reportPath?: string; reviewPages?: number[]; totalPages?: number }>;
   secret?: (payload: SecretPayload, signal?: AbortSignal) => Promise<SecretResult>;
 }
 
@@ -256,6 +258,19 @@ export class NotifyServer {
           outcome: result.outcome,
           ...(result.denial === undefined ? {} : { denial: result.denial }),
         });
+        return;
+      }
+      if (req.url === '/ocr') {
+        if (!this.deps.ocr) { respond(404, { ok: false, error: 'OCR is disabled' }); return; }
+        const payload = JSON.parse(body) as OcrPayload;
+        if (payload.token !== this.token) { respond(401, { ok: false, error: 'invalid token' }); return; }
+        if (typeof payload.sessionId !== 'string' || !payload.sessionId || typeof payload.path !== 'string' || !payload.path.trim()
+          || (payload.pages !== undefined && (!Array.isArray(payload.pages) || !payload.pages.length || payload.pages.length > 5000
+            || payload.pages.some((page) => !Number.isInteger(page) || page < 1 || page > 5000)))) {
+          respond(400, { ok: false, error: 'Valid sessionId, path and 1-based pages are required' }); return;
+        }
+        const result = await waitForHuman((signal) => this.deps.ocr!(payload, signal));
+        respond(result.ok ? 200 : 400, { ...result });
         return;
       }
       if (req.url === '/file') {

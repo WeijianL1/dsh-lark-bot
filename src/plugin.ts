@@ -149,7 +149,7 @@ export class LarkBridgeService extends Service {
       env,
       profileName: config.profile ?? 'default',
       allowOnboarding: true,
-      ...(env.feedbackRepair || env.feedbackMemory ? { feedbackGenerate: this.feedbackGenerate } : {}),
+      ...(env.feedbackRepair || env.feedbackMemory || env.smartIntervention ? { feedbackGenerate: this.feedbackGenerate } : {}),
       ...(deps.createChannel ? { createChannel: deps.createChannel } : {}),
       ...(deps.adapter ? { adapter: deps.adapter } : {}),
     })

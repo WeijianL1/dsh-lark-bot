@@ -6,6 +6,28 @@ import {
 } from '../../src/card/run-state.js';
 
 describe('run state reducer', () => {
+  it('totals every step in a turn and starts the next run at zero', () => {
+    let state = reduce(initialState, { type: 'usage', inputTokens: 100, outputTokens: 20 });
+    state = reduce(state, { type: 'tool_use', id: 'a', name: 'read', input: {} });
+    state = reduce(state, { type: 'tool_result', id: 'a', output: 'ok', isError: false });
+    state = reduce(state, { type: 'usage', inputTokens: 150, outputTokens: 30 });
+    state = reduce(state, { type: 'done', sessionId: 'same-session', terminationReason: 'normal' });
+    expect(state.usage).toEqual({ inputTokens: 250, outputTokens: 50 });
+    const next = reduce(initialState, { type: 'usage', inputTokens: 10, outputTokens: 2 });
+    expect(next.usage).toEqual({ inputTokens: 10, outputTokens: 2 });
+    expect(initialState.usage).toBeUndefined();
+  });
+
+  it('preserves known totals for missing fields and ignores context snapshots', () => {
+    let state = reduce(initialState, { type: 'usage', inputTokens: 100 });
+    expect(state.usage?.outputTokens).toBeUndefined();
+    state = reduce(state, { type: 'usage', outputTokens: 0 });
+    state = reduce(state, { type: 'usage', outputTokens: 25 });
+    state = reduce(state, { type: 'context_usage', usedTokens: 900, contextWindow: 1000 });
+    state = markInterrupted(state);
+    expect(state.usage).toEqual({ inputTokens: 100, outputTokens: 25 });
+  });
+
   it('streams text deltas into the same block', () => {
     const state = reduce(
       reduce(initialState, { type: 'text', delta: 'hello' }),

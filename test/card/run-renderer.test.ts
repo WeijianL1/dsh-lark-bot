@@ -39,12 +39,12 @@ describe('renderCard', () => {
   });
 
   it('shows friendly active progress in summaries and contains no raw tool identifiers', () => {
-    const state = reduce(initialState, { type: 'tool_use', id: 'tool1', name: 'mcp__pkulaw__search', input: { query: 'private' } });
+    const state = reduce(initialState, { type: 'tool_use', id: 'tool1', name: 'mcp__pkulaw__search', input: { query: '合同解除' } });
     for (const card of [renderCard(state), renderLegacyCard(state)]) {
       const text = JSON.stringify(card);
       expect(text).toContain('正在查找资料');
       expect(text).not.toContain('mcp__pkulaw__search');
-      expect(text).not.toContain('private');
+      expect(text).not.toContain('input');
     }
     const unknown = reduce(initialState, { type: 'tool_use', id: 'tool2', name: 'exec_command', input: { cmd: 'ocr private.pdf' } });
     expect(JSON.stringify(renderCard(unknown))).toContain('正在处理任务');
@@ -72,7 +72,7 @@ describe('renderCard', () => {
     };
     const panel = running.body.elements.find((element) => element.tag === 'collapsible_panel');
     expect(panel).toMatchObject({ tag: 'collapsible_panel', expanded: false });
-    expect(JSON.stringify(panel)).toContain('阅读资料');
+    expect(JSON.stringify(panel)).toContain('暂未收到具体操作说明');
     expect(JSON.stringify(panel)).not.toContain('inspect the code');
     expect(JSON.stringify(panel)).not.toContain('src');
     expect((running as unknown as { config: { summary: { content: string } } }).config.summary.content)
@@ -206,7 +206,7 @@ describe('renderCard', () => {
       body: { elements: Array<Record<string, unknown>> };
     };
     const panel = card.body.elements.find((element) => element.tag === 'collapsible_panel');
-    expect(JSON.stringify(panel)).toContain('正在处理请求');
+    expect(JSON.stringify(panel)).toContain('暂未收到具体操作说明');
     expect(JSON.stringify(panel)).not.toContain('BEGIN-');
     expect(JSON.stringify(panel)).not.toContain('-LATEST');
     const snapshot = card.body.elements.find((element) => JSON.stringify(element).includes('正在分析问题'));
@@ -237,8 +237,8 @@ describe('renderCard', () => {
       expect(serialized.length).toBeLessThanOrEqual(28_000);
       expect(serialized).not.toContain('tool-LATEST');
       expect(serialized).not.toContain('tool-OLDEST');
-      expect(serialized).toContain('较早的步骤');
-      expect(serialized).toContain('earlier steps');
+      expect(serialized).toContain('暂未收到具体操作说明');
+      expect(serialized).toContain('No activity descriptions yet');
     },
   );
 
@@ -266,6 +266,25 @@ describe('renderCard', () => {
     expect(serialized).toContain('正在分析问题');
     expect(serialized).not.toContain('PRIVATE_INPUT_');
     expect(serialized).not.toContain('PRIVATE_OUTPUT_');
+  });
+
+  it('bounds UTF-8 bytes for Chinese source metadata and plan text', () => {
+    let state = initialState;
+    for (let index = 0; index < 8; index += 1) {
+      state = reduce(state, { type: 'tool_use', id: `search-${index}`, name: 'search', input: { query: '合同解除'.repeat(35) } });
+      state = reduce(state, { type: 'tool_result', id: `search-${index}`, isError: false,
+        output: JSON.stringify({ results: Array.from({ length: 3 }, () => ({ title: '法律依据'.repeat(35) })) }) });
+    }
+    state = reduce(state, { type: 'tool_use', id: 'plan', name: 'todo_write', input: {
+      todos: Array.from({ length: 8 }, () => ({ content: '核对材料'.repeat(35), status: 'completed' })),
+    } });
+    state = reduce(state, { type: 'tool_result', id: 'plan', isError: false, output: '' });
+    for (const density of ['compact', 'standard', 'detailed'] as const) {
+      const card = JSON.stringify(renderCard(state, density));
+      expect(Buffer.byteLength(card, 'utf8')).toBeLessThanOrEqual(28_000);
+      expect(card).toContain('计划进度');
+      expect(card).toContain('法律依据');
+    }
   });
 
   it.each(['compact', 'standard', 'detailed'] as const)(

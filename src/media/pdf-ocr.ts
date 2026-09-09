@@ -63,7 +63,8 @@ export async function runPdfOcr(source: string, options: OcrOptions = {}): Promi
       await writeFile(temp, workerSource, { mode: 0o600 });
       await rename(temp, script);
     }
-    const output = `${source}.ocr`;
+    const selection = options.pages ? createHash('sha256').update(JSON.stringify([...new Set(options.pages)].sort((a, b) => a-b))).digest('hex').slice(0, 16) : '';
+    const output = `${source}.ocr${selection ? `-${selection}` : ''}`;
     const args = [script, '--source', source, '--output', output,
       '--page-timeout', String(options.pageTimeoutSeconds ?? 120)];
     if (options.pages) args.push('--pages', options.pages.join(','));

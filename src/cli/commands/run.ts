@@ -5,7 +5,7 @@ import { FeedbackTasks } from '../../feedback/tasks.js';
 import { MnemonFeedbackMemory } from '../../feedback/memory.js';
 import type { FeedbackGenerate } from '../../feedback/generate.js';
 import { FeedbackStore } from '../../feedback/store.js';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentAdapter } from '../../adapters/types.js';
@@ -62,6 +62,8 @@ import { AttachmentDownloadError } from '../../media/download-error.js';
 import { createLarkResourceDownloader } from '../../media/lark-download.js';
 import { downloadProgress } from '../../media/download-progress.js';
 import { PdfOcrError, runPdfOcr } from '../../media/pdf-ocr.js';
+import { writeFileAtomic } from '../../platform/atomic-write.js';
+import { buildOcrHandler } from '../../media/ocr-handler.js';
 import { ocrProgress } from '../../media/ocr-progress.js';
 import { SessionStore } from '../../session/store.js';
 import { SessionProjectionStore } from '../../session/projection-store.js';
@@ -377,6 +379,7 @@ export async function startBridgeEngine(
     },
   });
   const notifyToken = generateNotifyToken();
+  const attachmentControllers = new Set<AbortController>();
   const notifyServer = new NotifyServer({
     token: notifyToken,
     resolve: (message) => {
@@ -449,6 +452,18 @@ export async function startBridgeEngine(
         },
       },
     }),
+    ...(env.pdfOcr ? { ocr: buildOcrHandler({
+      binding: async (sessionId) => {
+        const scope = sessions.scopeForSession(sessionId);
+        const workspace = sessions.workspaceForSession(sessionId);
+        const destination = scope ? scopeDirectory.resolve(scope) : undefined;
+        if (!scope || !workspace || !destination?.messageId) return undefined;
+        const executionRoot = (await worktreeManager.ensure(scope, workspace)).cwd;
+        return { scope, workspace, roots: [workspace, executionRoot], chatId: destination.chatId,
+          messageId: destination.messageId, ...(destination.threadId ? { threadId: destination.threadId } : {}) };
+      },
+      channel: () => streaming, activeRuns, controllers: attachmentControllers, python: env.ocrPython,
+    }) } : {}),
     file: buildFileHandler({
       sessions,
       scopeDirectory,
@@ -482,7 +497,6 @@ export async function startBridgeEngine(
   });
   process.env.DSH_LARK_NOTIFY_TOKEN = notifyToken;
 
-  const attachmentControllers = new Set<AbortController>();
   const downloadResource = createLarkResourceDownloader({ ...activeProfile.accounts, tenant: activeProfile.tenant });
   const pending = new PendingQueue<QueuedMessage>(
     DEBOUNCE_MS,
@@ -943,6 +957,10 @@ export async function startBridgeEngine(
   updateResultTimer.unref?.();
   await recoverDurableJobs(jobRecovery, jobs, pending, streaming);
   await notifyServer.start();
+  const ocrDiscovery = paths.profilePath(profileName, 'ocr-bridge.json');
+  if (env.pdfOcr) {
+    await writeFileAtomic(ocrDiscovery, JSON.stringify({ endpoint: notifyServer.url!.replace(/\/notify$/, '/ocr'), token: notifyToken, python: env.ocrPython }), { mode: 0o600 });
+  } else await rm(ocrDiscovery, { force: true });
   process.env.DSH_LARK_NOTIFY_URL = notifyServer.url ?? '';
   process.env.DSH_LARK_ASK_URL = notifyServer.askUrl ?? '';
   process.env.DSH_LARK_PLAN_URL = notifyServer.planUrl ?? '';
@@ -1035,6 +1053,10 @@ export async function startBridgeEngine(
       if (stopped) return;
       stopped = true;
       for (const controller of attachmentControllers) controller.abort();
+      try {
+        const discovery = JSON.parse(await readFile(ocrDiscovery, 'utf8')) as { token?: string };
+        if (discovery.token === notifyToken) await rm(ocrDiscovery, { force: true });
+      } catch { /* Missing/stale discovery must not prevent shutdown. */ }
       updateNotifier.stop();
       clearInterval(updateResultTimer);
       heartbeat.stop();

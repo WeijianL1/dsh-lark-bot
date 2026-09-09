@@ -13,6 +13,20 @@ describe('OCR progress card', () => {
     expect(JSON.stringify(updateCard.mock.calls)).toContain('2–4、8');
     expect(formatPageRanges([9,2,1,2,5,6])).toBe('1–2、5–6、9');
   });
+  it('shows a determinate progress bar and preserved progress when paused', async () => {
+    const sendCard = vi.fn().mockResolvedValue('card'); const updateCard = vi.fn();
+    const notify = ocrProgress({ sendCard, updateCard } as unknown as StreamingChannel,
+      { chatId: 'chat', messageId: 'source' }, 'scan.pdf');
+    notify({ type: 'started', total: 10, done: 4, cached: 4 });
+    await vi.waitFor(() => expect(sendCard).toHaveBeenCalled());
+    const initial = JSON.stringify(sendCard.mock.calls[0]?.[1]);
+    expect(initial).toContain('40%'); expect(initial).toContain('▰'.repeat(8)); expect(initial).toContain('▱'.repeat(12));
+    expect(initial).toContain('断点复用 4 页');
+    notify({ type: 'stopped' });
+    await vi.waitFor(() => expect(updateCard).toHaveBeenCalled());
+    expect(JSON.stringify(updateCard.mock.calls)).toContain('40%');
+    expect(JSON.stringify(updateCard.mock.calls)).not.toContain('100%');
+  });
   it('coalesces updates and never waits on a hung card API', async () => {
     let release!: (value: string) => void;
     const sendCard = vi.fn(() => new Promise<string>((resolve) => { release = resolve; }));

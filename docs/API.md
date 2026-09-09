@@ -1244,18 +1244,17 @@ export DSH_LARK_PDF_OCR=true
 每页完成后原子保存带校验和的 JSON，位于 `<原附件路径>.ocr/`；源文件、脚本、策略或依赖版本改变会使旧断点失效。运行时脚本存放于同目录 `.pdf-ocr-runtime/`。一台 bot 进程同时只跑一个 OCR，按页调度，每 5 页回收子进程，每页最多 120 秒、单张渲染最多 1200 万像素、文档最多 5000 页；失败页不阻断其余页面，下次重试会重做失败页。超过页数限制或加密 PDF 会提示未完成。提取文本不进入进度日志；缓存具有和原附件相同的敏感性，清理附件时应一并清理 `.ocr` 目录。
 
 
-### 历史 PDF / 旧脚本入口与进度条
+### 历史 PDF / 统一 OCR 入口与进度条
 
-随包提供 `skills/pdf-ocr` 和 `bin/pdf-ocr-compat.py`。将技能目录链接到 DSH workspace 的技能目录，即可保留 `scripts/pdf_smart_parse.py` 与 `scripts/pdf_ocr.py` 两个旧命令入口；不再使用旧的批量 RapidOCR 实现。安装前备份已有同名技能目录。不要复制这两个很短的入口脚本到无关目录，它们按包内相对路径找到兼容 CLI。
-
+随包提供 `skills/pdf-ocr`，唯一命令入口是 `scripts/ocr.py`，直接调用插件的统一 OCR 模块。将整个技能目录链接到 DSH workspace 的技能目录；安装前备份已有同名技能目录并移除已废弃的旧命令入口。技能文件需要保持包内布局，或使用指向包内文件的符号链接。
 ```bash
-python3 <插件目录>/skills/pdf-ocr/scripts/pdf_smart_parse.py document.pdf --output extracted.md
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --output extracted.md
 # 可选明确页码；不需要人工分批并行
-python3 <插件目录>/skills/pdf-ocr/scripts/pdf_ocr.py document.pdf --pages '1-5,8' -o selected.md
+python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --pages '1-5,8' -o selected.md
 ```
 
 飞书 shell 的 `DSH_SESSION_ID` 自动绑定会话；CLI 读取 `<Lark状态根>/profiles/*/ocr-bridge.json`（0600）的本地端点、令牌和 Python 路径，调用已鉴权的 `/ocr`。搜索 `DSH_LARK_HOME`、`DSH_HOME/lark` 和默认 `~/.dsh-lark`，跳过已停止的端点。自定义根目录应显式设置 `DSH_LARK_HOME`。系统 Python 缺少 PyMuPDF 时，会切换到配置的 OCR venv。服务停用时清理属于自己的发现文件。
 
-服务端根据已有 session binding 决定聊天和话题，拒绝工作区之外的文件及符号链接越界；调用者不能指定 chat ID。旧入口与新附件流程共享单任务队列，`/stop` 取消该会话的 OCR，HTTP 连接断开或服务退出也会保存断点后停止。非飞书会话使用同一 Python 引擎本地执行；桥接不可用会提示错误，可明确使用 `--local` 运行而不发卡片。部分页码采用独立的确定性缓存目录，避免并发批次覆盖汇总文本；相同文件和相同页码选择可续跑。
+服务端根据已有 session binding 决定聊天和话题，拒绝工作区之外的文件及符号链接越界；调用者不能指定 chat ID。统一入口与新附件流程共享单任务队列，`/stop` 取消该会话的 OCR，HTTP 连接断开或服务退出也会保存断点后停止。非飞书会话使用同一 Python 引擎本地执行；桥接不可用会提示错误，可明确使用 `--local` 运行而不发卡片。部分页码采用独立的确定性缓存目录，避免并发批次覆盖汇总文本；相同文件和相同页码选择可续跑。
 
 独立 OCR 卡片使用原生 Markdown、彩色分段进度条、百分比、完成/总页数，以及耗时、断点复用和待复核标签；下方分隔展示高清重试和最终复核页码。排队/检查阶段不伪造百分比，暂停保留真实进度。卡片更新失败不会阻断 OCR。卡片语法参考 [飞书 Markdown 文档](https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags)。

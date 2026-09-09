@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility CLI for pdf_smart_parse.py and pdf_ocr.py; one OCR engine."""
+"""Canonical PDF OCR entry: session-bound bridge or the same local worker."""
 import argparse
 import hashlib
 import json
@@ -113,7 +113,7 @@ def bridge_request(source, pages):
 
 
 def local_run(source, pages):
-    worker = Path(__file__).resolve().parent.parent / 'src/media/pdf-ocr-worker.py'
+    worker = Path(__file__).resolve().parents[3] / 'src/media/pdf-ocr-worker.py'
     if not worker.is_file():
         raise RuntimeError('Packaged OCR worker is missing')
     suffix = hashlib.sha256(json.dumps(pages, separators=(',', ':')).encode()).hexdigest()[:16] if pages else ''
@@ -149,9 +149,6 @@ def main():
     parser.add_argument('--pages')
     parser.add_argument('--output', '-o')
     parser.add_argument('--json', action='store_true')
-    parser.add_argument('--classify-only', action='store_true')
-    parser.add_argument('--force-ocr', action='store_true')
-    parser.add_argument('--dpi', type=int)
     parser.add_argument('--local', action='store_true', help='Run locally without a Lark card')
     args = parser.parse_args()
     source = Path(args.pdf).resolve(strict=True)
@@ -162,12 +159,6 @@ def main():
         if doc.needs_pass or not 1 <= len(doc) <= 5000:
             raise ValueError('PDF must be unencrypted and contain 1–5000 pages')
         pages = parse_pages(args.pages, len(doc))
-        if args.classify_only:
-            print(json.dumps({'engine': 'pymupdf', 'total_pages': len(doc), 'pdf_type': 'not_classified',
-                              'note': 'Page-level text/scan detection occurs during extraction'}, ensure_ascii=False))
-            return
-    if args.dpi or args.force_ocr:
-        print('Compatibility option: the unified engine uses native-text detection and a fixed 150/300 DPI policy.', file=sys.stderr)
     result = None if args.local else bridge_request(source, pages)
     result = result or local_run(source, pages)
     text = Path(result['textPath']).read_text()

@@ -3,7 +3,7 @@
   "subject": "io.github.plutokeating.dsh-lark-bot@0.19.16",
   "specVersion": "community-v0.15",
   "hostDescriptorDigest": "sha256:993dd0fccfcd38c2d7bad2186ed725fa524a58f5572fe9df248d37d4319dbd47",
-  "artifactDigest": "sha256:c404039e974a98781184e06ff67396dfe671f35d6ba1269c33272d9ad69217be",
+  "artifactDigest": "sha256:fff0fa5cd1b7bfb730790f88b4ac4de0f0c87ab9021eb51bdd405f4acb5bc6eb",
   "suiteVersion": "dsh-lark-bot-ci-local/0.19.16",
   "evidenceLevel": "Tested",
   "result": "pass",

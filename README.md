@@ -223,3 +223,14 @@ python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --pages '1-5,8
 服务端根据已有 session binding 决定聊天和话题，拒绝工作区之外的文件及符号链接越界；调用者不能指定 chat ID。统一入口与新附件流程共享单任务队列，`/stop` 取消该会话的 OCR，HTTP 连接断开或服务退出也会保存断点后停止。非飞书会话使用同一 Python 引擎本地执行；桥接不可用会提示错误，可明确使用 `--local` 运行而不发卡片。部分页码采用独立的确定性缓存目录，避免并发批次覆盖汇总文本；相同文件和相同页码选择可续跑。
 
 独立 OCR 卡片使用原生 Markdown、彩色分段进度条、百分比、完成/总页数，以及耗时、断点复用和待复核标签；下方分隔展示高清重试和最终复核页码。排队/检查阶段不伪造百分比，暂停保留真实进度。卡片更新失败不会阻断 OCR。卡片语法参考 [飞书 Markdown 文档](https://open.feishu.cn/document/common-capabilities/message-card/message-cards-content/using-markdown-tags)。
+
+
+## 智能介入群聊
+
+`DSH_LARK_SMART_INTERVENTION=true` 启用轻量判断器；`DSH_LARK_SMART_INTERVENTION_CHATS` 设置初始启用群 ID（逗号分隔）。管理员在群里 @ bot 发送 `/intervene on`、`/intervene off`、`/intervene status` 可切换/查询本群，第一次登记群聊时应 @ bot。设置保存在 `<profile>/smart-intervention.json`（0600），持久化覆盖初始环境值。普通成员不能更改设置。现有 `allowedUsers` / `allowedChats` 仍然适用；白名单外用户不会触发判断，设置损坏时保持安静。
+
+未 @ 的文字消息先合并观察 4 秒，每群最多每 30 秒判断一次；使用宿主已配置模型进行不带工具的调用。判断器默认沉默，仅在能给出明确、有用的简短回答或补充时发言。普通寒暄、确认、点名其他成员、附件和无关闲聊不触发任务；缺信息、模型超时或输出无效时不发提示卡。模型判断是启发式，可能漏回或偶尔误判；重要请求仍请 @ bot。
+
+默认群内回复冷却 180 秒，可用 `DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS` 调整，最小 30 秒。重复消息/重复回复被抑制；bot 正忙时不插话；新消息、@ 请求和关闭群开关会取消尚未发出的旧判断。@ 消息直接进入正常 agent 流程，不受自动回复冷却影响。未 @ 的自动补充不读取私人记忆、不下载附件、不执行工具操作，也不声称完成任务。
+
+仅在内存中保留当前 scope/workspace 最近最多 12 条、10 分钟内的白名单对话；成员隔离和话题隔离沿用现有配置。后续 @ 请求会得到同一 scope 的这些公开对话上下文，因此正常 agent 知道 bot 刚才的自动补充。服务重启不回放旧消息。使用现有群消息轮询能力和群历史权限；智能介入启用时优先于旧 `DSH_LARK_GROUP_NO_AT` 开关；没有启用智能介入的群仍要求 @，不会退回逐条回复模式。

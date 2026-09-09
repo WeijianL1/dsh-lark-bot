@@ -483,3 +483,8 @@ profile/workspace/chat/actor store is recalled into subsequent inbound tasks. Se
 
 
 The single canonical PDF command is `skills/pdf-ocr/scripts/ocr.py`; obsolete CLI aliases and compatibility flags are removed. In a bound Lark session the CLI discovers a private localhost callback and submits to `NotifyServer /ocr`; `media/ocr-handler.ts` checks real workspace roots, captures the session destination, registers a separate cancellable ActiveRun, and calls the same OCR semaphore as attachments. Whitespace heartbeats keep long requests alive, and client disconnection aborts work. Standalone execution uses the same packaged worker. OCR cards show determinate segmented progress and bounded review metadata.
+
+
+## Smart group intervention
+
+`SmartIntervention` receives opt-in unmentioned group text before normal mention gating. It maintains bounded, ephemeral scope/workspace context and uses the existing injected no-tools generator independently of feedback flags. It never enters the task queue. Admin controls persist group overrides atomically. The history poller filters selected groups; authorization, freshness, active-run state and revision/cancellation are checked before delivery. Directed requests retain the normal bridge path and cancel pending interjections. Recent public intervention context is appended to later directed requests within the same scope/workspace.

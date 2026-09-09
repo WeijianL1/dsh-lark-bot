@@ -1238,6 +1238,164 @@ describe('startChannel', () => {
     }
   });
 
+  it('judges unmentioned messages without queuing tasks, while @ messages still dispatch', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const fake = makeChannel();
+    const pending = {
+      push: vi.fn(),
+      size: vi.fn().mockReturnValue(0),
+      isFlushing: vi.fn().mockReturnValue(false),
+      isBlocked: vi.fn().mockReturnValue(false),
+    };
+    const historyItem = (messageId: string) => ({
+      messageId,
+      chatId: 'oc-group',
+      createTime: 100_001,
+      senderId: 'ou-allowed',
+      senderType: 'user',
+      messageType: 'text',
+      deleted: false,
+    });
+    const groupHistorySource = {
+      listMessages: vi.fn().mockResolvedValue({
+        items: [historyItem('om-event'), historyItem('om-polled')],
+        hasMore: false,
+      }),
+      fetchMessage: vi.fn().mockImplementation(async (messageId: string) =>
+        message({
+          messageId,
+          chatId: 'oc-group',
+          chatType: 'group',
+          chatMode: 'group',
+          senderId: 'ou-allowed',
+          senderType: 'user',
+          senderIsBot: false,
+          content: messageId === 'om-event' ? 'event copy' : 'without mention',
+          createTime: 100_001,
+        }),
+      ),
+    };
+    const scopeDirectory = {
+      register: vi.fn(),
+      knownChats: () => [{ chatId: 'oc-group', chatMode: 'group' as const }],
+      resolve: vi.fn(),
+      resolveChat: vi.fn(),
+      knownScopes: vi.fn().mockReturnValue(['oc-group']),
+      flush: vi.fn(),
+    };
+    vi.mocked(fake.channel.connect).mockImplementation(async () => {
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(
+        message({
+          messageId: 'om-event',
+          chatId: 'oc-group',
+          chatType: 'group',
+          chatMode: 'group',
+          senderId: 'ou-allowed',
+          senderType: 'user',
+          content: 'live event during connect',
+          createTime: 100_001,
+        }),
+      );
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(
+        message({
+          messageId: 'om-unauthorized',
+          chatId: 'oc-group',
+          chatType: 'group',
+          chatMode: 'group',
+          senderId: 'ou-not-allowed',
+          senderType: 'user',
+          content: 'unmentioned unauthorized live event',
+          createTime: 100_001,
+        }),
+      );
+    });
+    let bridge: Awaited<ReturnType<typeof startChannel>> | undefined;
+    try {
+      bridge = await startChannel({
+        appId: 'cli_test',
+        appSecret: 'secret',
+        tenant: 'feishu',
+        adapter: fakeAdapter(),
+        sessions: new SessionStore(':memory:'),
+        workspaces: new WorkspaceStore(':memory:'),
+        activeRuns: new ActiveRuns(),
+        runPolicies: new RunPolicyStore(),
+        concurrencyStore: new ConcurrencyStore(),
+        defaultScopeConcurrency: 2,
+        retentionStore: new RetentionStore(),
+        roleStore: new RoleStore(':memory:'),
+        scopeDirectory: scopeDirectory as never,
+        archiver: {
+          archive: vi.fn(),
+          list: vi.fn().mockResolvedValue([]),
+          prune: vi.fn().mockResolvedValue(0),
+        } as never,
+        defaultRetention: 40,
+        archiveMax: 50,
+        archiveMaxAgeDays: 90,
+        defaultRunTimeoutMs: 300_000,
+        models: new ModelStore(),
+        wizardStore: new WizardStore(),
+        dshConfig: new DshProviderManager({
+          home: join(tmpdir(), 'dsh-lark-bot-test-home'),
+        }),
+        defaultModel: 'deepseek-v4-flash',
+        accessManager: {
+          isAdmin: (id: string) => id === 'ou-allowed',
+          snapshot: () => ({
+            allowedUsers: ['ou-allowed'],
+            allowedChats: [],
+            admins: [],
+          }),
+        } as never,
+        pending: pending as never,
+        defaultWorkspace: '/tmp/project',
+        eventFreshnessMs: 600_000,
+        smartIntervention: { chats: ['oc-group'], cooldownMs: 180_000,
+          generate: async () => '{"reply":"这里补充一个相关信息。"}' },
+        groupNoAt: true,
+        groupPollMs: 3_000,
+        groupHistorySource,
+        createChannel: fake.createChannel,
+      });
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(pending.push).not.toHaveBeenCalled();
+      expect(JSON.stringify(fake.sent)).toContain('这里补充一个相关信息');
+      const before = fake.sent.length;
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(message({
+        messageId: 'direct', chatId: 'oc-group', chatType: 'group', chatMode: 'group', senderId: 'ou-allowed',
+        senderType: 'user', mentionedBot: true, content: '请详细分析', createTime: Date.now(),
+      }));
+      expect(pending.push).toHaveBeenCalledOnce();
+      expect(pending.push.mock.calls[0]?.[1].messageId).toBe('direct');
+      expect(fake.sent.length).toBe(before);
+      expect(pending.push.mock.calls[0]?.[1].content).toContain('这里补充一个相关信息');
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(message({
+        messageId: 'disable', chatId: 'oc-group', chatType: 'group', chatMode: 'group', senderId: 'ou-allowed',
+        senderType: 'user', content: '/intervene off', createTime: Date.now(),
+      }));
+      expect(JSON.stringify(fake.sent)).toContain('智能介入已关闭');
+      const sentAfterDisable = fake.sent.length;
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(message({
+        messageId: 'unauthorized-enable', chatId: 'oc-group', chatType: 'group', chatMode: 'group', senderId: 'ou-not-allowed',
+        senderType: 'user', content: '/intervene on', createTime: Date.now(),
+      }));
+      expect(fake.sent.length).toBe(sentAfterDisable);
+      await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(message({
+        messageId: 'disabled-chat', chatId: 'oc-group', chatType: 'group', chatMode: 'group', senderId: 'ou-allowed',
+        senderType: 'user', content: '普通群消息', createTime: Date.now(),
+      }));
+      expect(pending.push).toHaveBeenCalledOnce();
+
+
+    } finally {
+      await bridge?.disconnect();
+      vi.useRealTimers();
+    }
+  });
+
   it('routes wizard card actions to the interactive config flow', async () => {
     const fake = makeChannel();
     const sessions = new SessionStore(':memory:');

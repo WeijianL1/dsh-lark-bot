@@ -13,12 +13,12 @@ class Runner:
 
 class Tests(unittest.TestCase):
  def test_stale_bridge_does_not_block_active_profile(self):
-  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'bin/pdf-ocr-compat.py');c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'skills/pdf-ocr/scripts/ocr.py');c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
   configs={'old':{'endpoint':'http://127.0.0.1:1/ocr','token':'test'},'live':{'endpoint':'http://127.0.0.1:2/ocr','token':'test'}}
   with patch.dict(c.os.environ,{'DSH_SESSION_ID':'s'}), patch.object(c,'discovery_files',return_value=['old','live']), patch.object(c,'read_config',side_effect=lambda p:configs[p]), patch.object(c.urllib.request,'urlopen',side_effect=[urllib.error.URLError(ConnectionRefusedError()),io.StringIO('{"ok":true,"textPath":"text.md"}')]) as request:
    self.assertEqual(c.bridge_request(pathlib.Path('/doc.pdf'),[1])['textPath'],'text.md');self.assertEqual(request.call_count,2)
  def test_configured_venv_is_used_when_shell_python_lacks_fitz(self):
-  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'bin/pdf-ocr-compat.py');c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'skills/pdf-ocr/scripts/ocr.py');c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
   real_import=__import__
   def importing(name,*args,**kwargs):
    if name=='fitz':raise ModuleNotFoundError('fitz')
@@ -26,8 +26,8 @@ class Tests(unittest.TestCase):
   with patch.dict(c.os.environ,{'DSH_LARK_OCR_PYTHON':'/venv/python','DSH_OCR_REEXEC':''}), patch('builtins.__import__',side_effect=importing), patch.object(c,'discovery_files',return_value=[]), patch.object(c.subprocess,'run',return_value=c.subprocess.CompletedProcess([],0)), patch.object(c.os,'execvpe',side_effect=RuntimeError('reexec')) as execute:
    with self.assertRaisesRegex(RuntimeError,'reexec'):c.ensure_pdf_runtime()
    self.assertEqual(execute.call_args.args[0],'/venv/python')
- def test_compat_page_ranges(self):
-  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'bin/pdf-ocr-compat.py');compat=importlib.util.module_from_spec(spec);spec.loader.exec_module(compat)
+ def test_canonical_page_ranges(self):
+  spec=importlib.util.spec_from_file_location('compat',pathlib.Path.cwd()/'skills/pdf-ocr/scripts/ocr.py');compat=importlib.util.module_from_spec(spec);spec.loader.exec_module(compat)
   self.assertEqual(compat.parse_pages('1-3,5,8-',10),[1,2,3,5,8,9,10])
   for invalid in ['0','6-2','1-10000000','11']:
    with self.assertRaises(ValueError):compat.parse_pages(invalid,10)

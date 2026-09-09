@@ -6,6 +6,7 @@ export type AgentEvent =
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; id: string; output: string; isError: boolean }
   | {
+      /** Disjoint usage sample: one model call, or one ACP run total. */
       type: 'usage';
       inputTokens?: number;
       outputTokens?: number;

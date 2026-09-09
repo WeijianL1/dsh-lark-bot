@@ -78,6 +78,11 @@ export function markFinalDeliveryFailed(
   return { ...state, finalDeliveryError: message, finalDeliveryFallback: answer };
 }
 
+/** Usage events are disjoint samples, not context-window snapshots. */
+function addTokens(total: number | undefined, sample: number | undefined): number | undefined {
+  return sample === undefined ? total : (total ?? 0) + sample;
+}
+
 export function reduce(state: RunState, event: AgentEvent): RunState {
   switch (event.type) {
     case 'text': {
@@ -126,8 +131,8 @@ export function reduce(state: RunState, event: AgentEvent): RunState {
       return {
         ...state,
         usage: {
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
+          inputTokens: addTokens(state.usage?.inputTokens, event.inputTokens),
+          outputTokens: addTokens(state.usage?.outputTokens, event.outputTokens),
         },
       };
 

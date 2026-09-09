@@ -669,7 +669,7 @@ ACP `PromptResponse.usage` 提供该 ACP session 的累计 input/output/cache，
   `model` 保存选择或运行时报告的模型路由；`requestReceivedAtMs` 是批次最早的本地消息处理入口时间（持久化于消息账本，旧记录回退到入队时间），
   `completedAtMs` 在最终回答发送结束（含失败）后固定。总耗时包括排队、附件准备、审批等待、模型和工具处理、
   最终发送；不包括用户到飞书服务器的网络延迟。没有入站时间的调用方显示“处理耗时”，模型缺失显示“未提供”。
-  token 保持 adapter 最近一次上报口径（SDK 为最近模型调用），不伪造整次请求累计 token。
+  token 累计本轮全部已上报 LLM step 的 input/output；SDK/Web 只采集已完成的 assistant/message，按 turn + step（缺失时用 seq）去重，流式 chunk 不重复计数。ACP 每个 run 创建新 session，因此其 session 累计值作为该 run 总量。缺失字段不估算；context 占用仍是独立快照，新 run 从零开始。
 - `src/card/status-card.ts`：纯 `renderStatusCard(input)` / `statusCardMarkdown(input)`；展示
   workspace/cwd、有效模型、session、当前 workspace runs、版本、context used/limit/percentage、累计四类 token
   与工具权限策略、待审批/提问/计划数、持久任务账本统计。refresh value 固化 scope/isolation；`src/bridge/channel.ts` 复用 member

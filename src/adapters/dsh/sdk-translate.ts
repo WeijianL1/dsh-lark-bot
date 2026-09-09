@@ -37,6 +37,7 @@ function textOfBlocks(blocks: unknown): string {
 
 interface ToolDeltaTracker {
   emitted: Set<string>;
+  usageSamples?: Set<string>;
 }
 
 function translateChunk(chunk: unknown, tracker: ToolDeltaTracker): AgentEvent[] {
@@ -153,8 +154,22 @@ export function translateSessionEvent(
     }
     case 'tool/result':
       return translateToolResult(event.data);
-    case 'assistant/message':
-      return translateAssistantMessage(event.data);
+    case 'assistant/message': {
+      // Only committed messages carry per-call usage. Streaming chunks are not
+      // samples. Retransmission must not inflate card or workspace totals.
+      const events = translateAssistantMessage(event.data);
+      if (events.length === 0) return events;
+      const data = isRecord(event.data) ? event.data : undefined;
+      const key = typeof data?.turn === 'number' && typeof data.step === 'number'
+        ? `step:${data.turn}:${data.step}`
+        : typeof event.seq === 'number' ? `seq:${event.seq}` : undefined;
+      if (key !== undefined) {
+        const seen = tracker.usageSamples ??= new Set<string>();
+        if (seen.has(key)) return [];
+        seen.add(key);
+      }
+      return events;
+    }
     case 'turn/end':
       return translateTurnEnd(event.data);
     default:

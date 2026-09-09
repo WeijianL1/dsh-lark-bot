@@ -1209,3 +1209,7 @@ card; inline reasons are bound to the voter, token, original chat and feedback m
 每日记忆与范围隔离、回执及失败语义见 [FEEDBACK_LOOPS.md](FEEDBACK_LOOPS.md)。
 
 `ConversationLearningPort` exposes resolve/observe/recall/activity to the host lifecycle adapter. `LearningJournal` owns conversation receipts and versioned lessons; `FeedbackMemory.forget` supports scoped, idempotent native retirement. See [conversation learning](CONVERSATION_LEARNING.md).
+
+### 附件下载失败
+
+`prepareAttachments` 在下载失败时抛出 `AttachmentDownloadError`，包含源 `messageId`、`sizeExceeded` 和中英双语安全提示。仅 API code 234037 被识别为下载大小超限；未知响应返回通用重发提示。dispatch 回复附件源消息（保留 thread），该批次记为 failed，不自动重试。定时队列的异常不传播到宿主进程；显式 `flushNow()` 保留 reject 契约。

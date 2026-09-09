@@ -7,6 +7,7 @@ import type {
 } from '@larksuite/channel';
 import { detectImageType } from './image-file.js';
 import { downscaleImageIfNeeded } from './image-scale.js';
+import { attachmentDownloadError } from './download-error.js';
 
 export interface PreparedAttachments {
   imagePaths: string[];
@@ -42,12 +43,18 @@ export async function prepareAttachments(
     assertSafeMediaName(mediaDir, destination);
     const downloadPath = resource.type === 'image' ? `${destination}.download` : destination;
     assertSafeMediaName(mediaDir, downloadPath);
-    await channel.downloadResourceToFile(
-      message.messageId,
-      resource.fileKey,
-      resource.type,
-      downloadPath,
-    );
+    try {
+      await channel.downloadResourceToFile(
+        message.messageId,
+        resource.fileKey,
+        resource.type,
+        downloadPath,
+      );
+    } catch (error) {
+      const failure = await attachmentDownloadError(error, message.messageId);
+      await rm(downloadPath, { force: true }).catch(() => undefined);
+      throw failure;
+    }
 
     if (resource.type === 'image') {
       try {

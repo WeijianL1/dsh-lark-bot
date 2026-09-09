@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
@@ -56,4 +56,21 @@ describe('prepareAttachments', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+  it('removes partial downloads and returns a safe actionable size-limit error', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lark-media-'));
+    const channel = {
+      downloadResourceToFile: async (_id: string, _key: string, _type: string, dest: string) => {
+        await writeFile(dest, 'partial');
+        throw { response: { data: { code: 234037 } }, config: { headers: { authorization: 'private' } } };
+      },
+    } as unknown as LarkChannel;
+    try {
+      await expect(prepareAttachments(channel, message([{ type: 'file', fileKey: 'big' }]), root))
+        .rejects.toThrow('请压缩或拆分后重新发送');
+      expect(await readdir(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
 });

@@ -467,3 +467,7 @@ profile/workspace/chat/actor store is recalled into subsequent inbound tasks. Se
 ## 此 fork：面向普通用户的进度卡
 
 过程卡把工具标识映射为固定的用户文案，主区只显示当前阶段，折叠区通过 `progress-details.ts` 保留最近检索主题、资料名称及结构化结果数量/标题，并复用执行工具的独立操作说明及最新成功保存的计划进度。无说明的操作仅保留在指标总数中。不读取命令或结果正文来生成摘要。指标区使用同一段落内的彩色标签；模型与 token 来自现有运行事件，工具次数按独立调用 ID 计数；入站账本时间沿 `runAgentBatch` 传递，最终回答发送结束后固定总耗时。兼容卡保留相同指标和停止操作。详见 [API 卡片渲染](API.md)。
+
+## 附件下载错误边界
+
+`PendingQueue` 的定时 flush 捕获并记录 dispatch 异常，释放并发槽并继续后续队列；直接调用 `flushNow` 仍向调用者抛错。dispatch 持久化 failed 终态。`media/download-error.ts` 将 SDK JSON / Buffer / Readable 错误归一为不带 HTTP 配置的错误；读取上限 8192 bytes、超时 1 秒。234037 映射为附件大小超限提示，下载残留尽力清理。通知失败不阻止终态持久化。

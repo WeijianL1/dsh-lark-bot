@@ -58,6 +58,7 @@ import { DEEPSEEK_PROVIDER, DshProviderManager } from '../../config/dsh-config.j
 import { log } from '../../core/logger.js';
 import { onboardPersonalAgent } from '../../onboard/registration.js';
 import { prepareAttachments } from '../../media/attachments.js';
+import { AttachmentDownloadError } from '../../media/download-error.js';
 import { SessionStore } from '../../session/store.js';
 import { SessionProjectionStore } from '../../session/projection-store.js';
 import { WebSessionProjectionSource } from '../../session/projection-protocol.js';
@@ -641,6 +642,13 @@ export async function startBridgeEngine(
             : 'failed';
       } catch (error) {
         ledgerError = error instanceof Error ? error.message : String(error);
+        if (error instanceof AttachmentDownloadError) {
+          const source = batch.find((message) => message.messageId === error.messageId) ?? first;
+          await streaming.sendMarkdown(source.chatId, error.message, {
+            replyTo: error.messageId,
+            ...(source.threadId ? { threadId: source.threadId } : {}),
+          }).catch((noticeError: unknown) => log.fail('attachment-notice', noticeError));
+        }
         throw error;
       } finally {
         if (ledgerClaimed) {

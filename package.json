@@ -57,6 +57,7 @@
   "files": [
     "dist",
     "bin",
+    "ocr-requirements.txt",
     "cordis.patch.yml",
     "dsh-plugin.json",
     "README.md",

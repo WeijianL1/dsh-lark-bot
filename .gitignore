@@ -55,3 +55,6 @@ Desktop.ini
 
 # Private per-message votes and reasons
 /feedback/
+
+# Python OCR worker bytecode
+__pycache__/

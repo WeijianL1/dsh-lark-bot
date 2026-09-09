@@ -338,3 +338,8 @@ dsh plugin --profile dsh-lark remove dsh-lark-bot
 ```
 
 卸载后 profile 不再加载插件；本地状态保留在 `~/.dsh-lark`，如需清除请先备份再删除该目录。
+
+
+## Optional PDF OCR
+
+For local, resumable PDF OCR, install `ocr-requirements.txt` into a Python 3.11–3.12 environment, then set `DSH_LARK_PDF_OCR=true` and `DSH_LARK_OCR_PYTHON` to that Python executable before starting the bot. See README's “可断点继续的 PDF OCR” section for commands, page limits and cache behavior. Windows uses `Scripts/python.exe`; Linux/macOS use `bin/python`. `/stop` preserves completed pages; retry the original attachment job to continue.

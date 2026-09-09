@@ -20,6 +20,7 @@ export interface PrepareAttachmentsOptions {
   maxImageDimension?: number;
   download?: (messageId: string, fileKey: string, type: 'image' | 'file', destination: string, options: DownloadOptions) => Promise<void>;
   downloadOptions?: DownloadOptions;
+  ocr?: (path: string, fileName: string) => Promise<{ textPath: string; reportPath: string; reviewPages: number[]; totalPages: number }>;
 }
 
 const MAX_TEXT_FILE_BYTES = 256_000;
@@ -87,6 +88,14 @@ export async function prepareAttachments(
       continue;
     }
 
+    if (options.ocr && /\.pdf$/i.test(resource.fileName ?? '')) {
+      const ocr = await options.ocr(destination, resource.fileName ?? 'PDF');
+      result.textFileNotes.push(`[attachment: ${resource.fileName ?? resource.fileKey}] ${destination}\n` +
+        `[PDF OCR completed: ${ocr.totalPages} pages] Read the extracted text at ${ocr.textPath}; ` +
+        `the page-level report is ${ocr.reportPath}. Do not rerun whole-document OCR. ` +
+        (ocr.reviewPages.length ? `Pages needing review: ${ocr.reviewPages.join(', ')}. Tell the user these pages contain unclear or failed regions; do not claim they were fully read.` : 'No pages were flagged by the OCR quality heuristic; this is not a guarantee of accuracy.'));
+      continue;
+    }
     const info = await stat(destination);
     if (info.size > MAX_TEXT_FILE_BYTES || /\.pdf$/i.test(resource.fileName ?? '')) {
       result.textFileNotes.push(`[attachment: ${resource.fileName ?? resource.fileKey}] ${destination}`);

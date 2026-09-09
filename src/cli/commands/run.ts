@@ -61,6 +61,8 @@ import { prepareAttachments } from '../../media/attachments.js';
 import { AttachmentDownloadError } from '../../media/download-error.js';
 import { createLarkResourceDownloader } from '../../media/lark-download.js';
 import { downloadProgress } from '../../media/download-progress.js';
+import { PdfOcrError, runPdfOcr } from '../../media/pdf-ocr.js';
+import { ocrProgress } from '../../media/ocr-progress.js';
 import { SessionStore } from '../../session/store.js';
 import { SessionProjectionStore } from '../../session/projection-store.js';
 import { WebSessionProjectionSource } from '../../session/projection-protocol.js';
@@ -520,18 +522,42 @@ export async function startBridgeEngine(
         for (const message of selected) {
           const progress = downloadProgress(streaming, message);
           let success = false;
+          let ocrStarted = false;
           try {
             attachmentController.signal.throwIfAborted();
             prepared.push({ message, attachments: await prepareAttachments(
               larkChannel, message, paths.mediaDir(profileName), {
                 maxImageDimension: env.imageMaxDimension,
                 download: downloadResource,
+                ...(env.pdfOcr ? { ocr: async (path: string, name: string) => {
+                  ocrStarted = true;
+                  await progress.finish(true);
+                  const update = ocrProgress(streaming!, message, name);
+                  let lastCheckpoint = 0;
+                  try {
+                    return await runPdfOcr(path, { python: env.ocrPython, signal: attachmentController.signal,
+                      onEvent: (event) => {
+                        update(event);
+                        if (Date.now() - lastCheckpoint >= 5000) {
+                          lastCheckpoint = Date.now();
+                          void jobs.checkpoint(ledgerMessageIds, { stage: 'starting',
+                            detail: `PDF OCR ${event.done ?? 0}/${event.total ?? '?'}${event.page ? ` page ${event.page}` : ''}`,
+                          }).catch((error: unknown) => log.fail('ocr-checkpoint', error));
+                        }
+                      },
+                    });
+                  } catch (error) {
+                    update({ type: attachmentController.signal.aborted ? 'stopped' : 'fatal' });
+                    if (error instanceof PdfOcrError) error.messageId = message.messageId;
+                    throw error;
+                  }
+                } } : {}),
                 downloadOptions: { maxBytes: env.attachmentMaxBytes, signal: attachmentController.signal,
                   onProgress: progress.update },
               },
             ) });
             success = true;
-          } finally { await progress.finish(success); }
+          } finally { if (!ocrStarted) await progress.finish(success); }
         }
         attachmentController.signal.throwIfAborted();
         activeRuns.delete(scope, attachmentRunId);
@@ -665,6 +691,12 @@ export async function startBridgeEngine(
       } catch (error) {
         if (attachmentController.signal.aborted) ledgerState = 'interrupted';
         ledgerError = error instanceof Error ? error.message : String(error);
+        if (error instanceof PdfOcrError) {
+          const source = batch.find((message) => message.messageId === error.messageId) ?? first;
+          await streaming.sendMarkdown(source.chatId, error.message, { replyTo: source.messageId,
+            ...(source.threadId ? { threadId: source.threadId } : {}),
+          }).catch((noticeError: unknown) => log.fail('ocr-notice', noticeError));
+        }
         if (error instanceof AttachmentDownloadError) {
           const source = batch.find((message) => message.messageId === error.messageId) ?? first;
           await streaming.sendMarkdown(source.chatId, error.message, {

@@ -83,6 +83,22 @@ describe('prepareAttachments', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it('hands PDF OCR text and review pages to the agent after download', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lark-media-'));
+    try {
+      const ocr = vi.fn(async (path: string) => {
+        expect(await readFile(path, 'utf8')).toBe('%PDF-test');
+        return { textPath: path+'.ocr/document.md', reportPath: path+'.ocr/report.json', reviewPages: [2, 3], totalPages: 5 };
+      });
+      const result = await prepareAttachments(fakeChannel({ pdf: '%PDF-test' }),
+        message([{ type: 'file', fileKey: 'pdf', fileName: 'scan.pdf' }]), root, { ocr });
+      expect(ocr).toHaveBeenCalledOnce();
+      expect(result.textFileNotes.join('\n')).toContain('document.md');
+      expect(result.textFileNotes.join('\n')).toContain('report.json');
+      expect(result.textFileNotes.join('\n')).not.toContain('%PDF-test');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it('preserves a completed range cache when a later metadata probe fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-lark-media-'));
     const path = join(root, 'msg-1-pdf');

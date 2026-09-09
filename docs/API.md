@@ -1222,4 +1222,23 @@ card; inline reasons are bound to the voter, token, original chat and feedback m
 
 同目录 `.part` 与 `.download.json`（0600）保存数据及每块 SHA-256，只有数据 fsync 后才提交进度。重试及完成缓存使用前重新验证本地分块；重启后由 `/jobs retry` 或再次处理同一消息继续下载，不自动重放 agent 的外部操作。无服务器 ETag 的资源以 messageId/fileKey/total 标识；校验和检测本地损坏，不作为远端签名。
 
-下载阶段注册为 ActiveRuns，可 `/stop`，关闭 bridge 也会中止。32 MiB 以上通过源消息/话题中的独立卡片报告进度，卡片发送失败不令下载失败。PDF 始终作为路径交给现有读取工具，避免小 PDF 被 UTF-8 解码。本版本不新增 OCR 引擎或自动逐页 OCR 调度。
+下载阶段注册为 ActiveRuns，可 `/stop`，关闭 bridge 也会中止。32 MiB 以上通过源消息/话题中的独立卡片报告进度，卡片发送失败不令下载失败。PDF 始终作为路径交给现有读取工具，避免小 PDF 被 UTF-8 解码。可选的本地 OCR 模块见下文。
+
+
+## 可断点继续的 PDF OCR
+
+设置 `DSH_LARK_PDF_OCR=true` 后，PDF 下载完成会进入插件内的独立 Python OCR 模块，再将 `document.md`、`report.json` 路径和复核页码交给助手。默认关闭，已有安装不会因为缺少 Python 依赖而改变 PDF 行为。启用前，在运行 bot 的用户下安装：
+
+```bash
+python3.12 -m venv ~/.venvs/lark-ocr
+~/.venvs/lark-ocr/bin/python -m pip install -r ocr-requirements.txt
+# 设置在启动 bot 的环境中（systemd 用户需在服务环境设置）
+export DSH_LARK_OCR_PYTHON="$HOME/.venvs/lark-ocr/bin/python"
+export DSH_LARK_PDF_OCR=true
+```
+
+需要 Python 3.11–3.12 和 requirements 中固定版本；Windows 使用对应 venv 的 `Scripts/python.exe`。首次安装需要网络下载依赖/随包模型；处理文档在本机运行。原始 PDF 不被改写。纯文字页直接提取；有大幅扫描图的混合页面执行 OCR，避免只读到页眉。扫描页先按 150 DPI 灰度、JPEG 80 压缩处理；低置信度区域按 300 DPI 重试，保留更可靠的候选文本；仍不清楚的区域/失败页写入复核清单。置信度只是启发式指标，不代表正确率，也不能保证发现所有模糊内容。
+
+进度卡在原附件话题显示当前页、完成页数、高分辨率重试和最终待复核页码范围。发送 `/stop` 会停止进程并保留完成页面；通过现有 job retry 重新处理同一附件任务时复用断点，不会自动重放旧任务。重新上传会产生新的附件路径，不承诺跨附件命中缓存。服务重启后也需显式重试原任务。
+
+每页完成后原子保存带校验和的 JSON，位于 `<原附件路径>.ocr/`；源文件、脚本、策略或依赖版本改变会使旧断点失效。运行时脚本存放于同目录 `.pdf-ocr-runtime/`。一台 bot 进程同时只跑一个 OCR，按页调度，每 5 页回收子进程，每页最多 120 秒、单张渲染最多 1200 万像素、文档最多 5000 页；失败页不阻断其余页面，下次重试会重做失败页。超过页数限制或加密 PDF 会提示未完成。提取文本不进入进度日志；缓存具有和原附件相同的敏感性，清理附件时应一并清理 `.ocr` 目录。

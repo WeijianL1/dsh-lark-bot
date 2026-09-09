@@ -33,6 +33,8 @@ export interface RuntimeEnv {
   /** Long-edge bound (px) applied to inbound images before upload (DSH_LARK_IMAGE_MAX_DIMENSION, default 2000). */
   imageMaxDimension: number;
   attachmentMaxBytes: number;
+  pdfOcr: boolean;
+  ocrPython: string;
   runTimeoutMs: number;
   stopGraceMs: number;
   /** Opt-in persistent votes on replies and files. */
@@ -305,6 +307,8 @@ export function loadRuntimeEnv(
     provider: nonEmpty(source.DSH_LARK_PROVIDER) ?? DEFAULTS.provider,
     model: nonEmpty(source.DSH_LARK_MODEL) ?? DEFAULTS.model,
     maxTokens: parseMaxTokens(source.DSH_LARK_MAX_TOKENS),
+    pdfOcr: parseBoolean(source.DSH_LARK_PDF_OCR, false),
+    ocrPython: nonEmpty(source.DSH_LARK_OCR_PYTHON) ?? 'python3',
     attachmentMaxBytes: parseMinOneInt(source.DSH_LARK_ATTACHMENT_MAX_BYTES, 1024 ** 3, 'DSH_LARK_ATTACHMENT_MAX_BYTES'),
     imageMaxDimension: parseMinOneInt(
       source.DSH_LARK_IMAGE_MAX_DIMENSION,

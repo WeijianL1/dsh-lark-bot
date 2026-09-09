@@ -475,3 +475,8 @@ profile/workspace/chat/actor store is recalled into subsequent inbound tasks. Se
 ## 大文件传输（此 fork）
 
 `media/range-download.ts` 管理有界预检、传输、校验、分块 receipt 与进程内下载去重/并发上限；`media/lark-download.ts` 管理固定域名和认证；`download-progress.ts` 只负责进度卡。dispatch 顺序准备同一批附件，避免某附件失败后其他下载仍在后台推进，并在交给 agent 前移除下载 ActiveRun。下载取消记 interrupted，失败记 failed；已完成分块留给显式重试。剩余下载空间检查预留 64 MiB，不改变已有 media 保留策略。
+
+
+## Deterministic PDF OCR
+
+`prepareAttachments` optionally calls `media/pdf-ocr.ts` before building agent input. The bundled `pdf-ocr-worker.py` is materialized by hash and runs in a cancellable process group. A global semaphore bounds CPU concurrency; the Python coordinator locks the output, validates per-page receipts, recycles a page subprocess every five pages, and writes an aggregate report. `ocr-progress.ts` coalesces JSONL metadata into a source-thread card without blocking processing on card delivery. ActiveRuns owns cancellation across download and OCR; failures retain checkpoints and follow existing durable job retry semantics. See API.md for dependency setup, limits and review heuristics.

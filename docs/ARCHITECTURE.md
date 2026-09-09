@@ -471,3 +471,7 @@ profile/workspace/chat/actor store is recalled into subsequent inbound tasks. Se
 ## 附件下载错误边界
 
 `PendingQueue` 的定时 flush 捕获并记录 dispatch 异常，释放并发槽并继续后续队列；直接调用 `flushNow` 仍向调用者抛错。dispatch 持久化 failed 终态。`media/download-error.ts` 将 SDK JSON / Buffer / Readable 错误归一为不带 HTTP 配置的错误；读取上限 8192 bytes、超时 1 秒。234037 映射为附件大小超限提示，下载残留尽力清理。通知失败不阻止终态持久化。
+
+## 大文件传输（此 fork）
+
+`media/range-download.ts` 管理有界预检、传输、校验、分块 receipt 与进程内下载去重/并发上限；`media/lark-download.ts` 管理固定域名和认证；`download-progress.ts` 只负责进度卡。dispatch 顺序准备同一批附件，避免某附件失败后其他下载仍在后台推进，并在交给 agent 前移除下载 ActiveRun。下载取消记 interrupted，失败记 failed；已完成分块留给显式重试。剩余下载空间检查预留 64 MiB，不改变已有 media 保留策略。

@@ -7,7 +7,8 @@ import type {
 } from '@larksuite/channel';
 import { detectImageType } from './image-file.js';
 import { downscaleImageIfNeeded } from './image-scale.js';
-import { attachmentDownloadError } from './download-error.js';
+import { AttachmentDownloadError, attachmentDownloadError } from './download-error.js';
+import { DownloadLimitError, DownloadHttpError, type DownloadOptions } from './range-download.js';
 
 export interface PreparedAttachments {
   imagePaths: string[];
@@ -17,6 +18,8 @@ export interface PreparedAttachments {
 export interface PrepareAttachmentsOptions {
   /** Long-edge bound (px) for inbound images; oversized images are downscaled proportionally. */
   maxImageDimension?: number;
+  download?: (messageId: string, fileKey: string, type: 'image' | 'file', destination: string, options: DownloadOptions) => Promise<void>;
+  downloadOptions?: DownloadOptions;
 }
 
 const MAX_TEXT_FILE_BYTES = 256_000;
@@ -44,15 +47,28 @@ export async function prepareAttachments(
     const downloadPath = resource.type === 'image' ? `${destination}.download` : destination;
     assertSafeMediaName(mediaDir, downloadPath);
     try {
-      await channel.downloadResourceToFile(
+      if (options.download) {
+        await options.download(message.messageId, resource.fileKey, resource.type, downloadPath, options.downloadOptions ?? {});
+      } else await channel.downloadResourceToFile(
         message.messageId,
         resource.fileKey,
         resource.type,
         downloadPath,
       );
     } catch (error) {
-      const failure = await attachmentDownloadError(error, message.messageId);
-      await rm(downloadPath, { force: true }).catch(() => undefined);
+      if (options.downloadOptions?.signal?.aborted) throw error;
+      if (error instanceof DownloadLimitError) {
+        throw new AttachmentDownloadError(message.messageId, true,
+          error.message === 'Insufficient space for attachment'
+            ? '服务器剩余空间不足，暂时无法下载附件。 / Insufficient server space to download the attachment.'
+            : '附件超过机器人配置的下载上限，请拆分文件后重新发送。 / Attachment exceeds the configured download limit. Please split it and resend.');
+      }
+      const failure = error instanceof DownloadHttpError
+        ? new AttachmentDownloadError(message.messageId, error.apiCode === 234037)
+        : await attachmentDownloadError(error, message.messageId);
+      // Range downloads own atomic final files and durable partials. A failed
+      // revalidation probe must not delete an already verified cached file.
+      if (!options.download) await rm(downloadPath, { force: true }).catch(() => undefined);
       throw failure;
     }
 
@@ -72,7 +88,7 @@ export async function prepareAttachments(
     }
 
     const info = await stat(destination);
-    if (info.size > MAX_TEXT_FILE_BYTES) {
+    if (info.size > MAX_TEXT_FILE_BYTES || /\.pdf$/i.test(resource.fileName ?? '')) {
       result.textFileNotes.push(`[attachment: ${resource.fileName ?? resource.fileKey}] ${destination}`);
       continue;
     }

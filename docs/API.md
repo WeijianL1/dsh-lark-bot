@@ -1213,3 +1213,13 @@ card; inline reasons are bound to the voter, token, original chat and feedback m
 ### 附件下载失败
 
 `prepareAttachments` 在下载失败时抛出 `AttachmentDownloadError`，包含源 `messageId`、`sizeExceeded` 和中英双语安全提示。仅 API code 234037 被识别为下载大小超限；未知响应返回通用重发提示。dispatch 回复附件源消息（保留 thread），该批次记为 failed，不自动重试。定时队列的异常不传播到宿主进程；显式 `flushNow()` 保留 reject 契约。
+
+### 可恢复附件下载（此 fork）
+
+`createLarkResourceDownloader` 使用固定 Feishu/Lark origin 和内存缓存的 tenant token，禁止重定向。`downloadInRanges` 先请求 `bytes=0-0`，从 `Content-Range` 获取总大小；`DSH_LARK_ATTACHMENT_MAX_BYTES` 默认 1073741824，超限时不消费文件正文。原 IM 接口官方限制与 Range 实测能力不同：Range 不可用时不保证下载大文件。
+
+8 MiB 顺序分块；全局最多同时下载两个文件。每块校验 206、精确范围、总长度及实际字节数，60 秒超时；网络错误/429/5xx 最多重试两次，整次下载最长 30 分钟。401 刷新 token 一次；永久错误不重试。服务器忽略 Range 时，只接受有明确 Content-Length 且不超过一个分块及总大小上限的响应。
+
+同目录 `.part` 与 `.download.json`（0600）保存数据及每块 SHA-256，只有数据 fsync 后才提交进度。重试及完成缓存使用前重新验证本地分块；重启后由 `/jobs retry` 或再次处理同一消息继续下载，不自动重放 agent 的外部操作。无服务器 ETag 的资源以 messageId/fileKey/total 标识；校验和检测本地损坏，不作为远端签名。
+
+下载阶段注册为 ActiveRuns，可 `/stop`，关闭 bridge 也会中止。32 MiB 以上通过源消息/话题中的独立卡片报告进度，卡片发送失败不令下载失败。PDF 始终作为路径交给现有读取工具，避免小 PDF 被 UTF-8 解码。本版本不新增 OCR 引擎或自动逐页 OCR 调度。

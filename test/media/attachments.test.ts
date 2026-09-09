@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
@@ -71,6 +71,27 @@ describe('prepareAttachments', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('passes even a small PDF as a file path rather than binary text', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lark-media-'));
+    try {
+      const result = await prepareAttachments(fakeChannel({ pdf: '%PDF-1.4 binary' }),
+        message([{ type: 'file', fileKey: 'pdf', fileName: 'small.pdf' }]), root);
+      expect(result.textFileNotes[0]).toContain(join(root, 'msg-1-pdf'));
+      expect(result.textFileNotes[0]).not.toContain('%PDF');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('preserves a completed range cache when a later metadata probe fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-lark-media-'));
+    const path = join(root, 'msg-1-pdf');
+    try {
+      await writeFile(path, 'verified-cache');
+      await expect(prepareAttachments(fakeChannel({}), message([{ type: 'file', fileKey: 'pdf' }]), root,
+        { download: async () => { throw new Error('probe offline'); } })).rejects.toThrow('附件下载失败');
+      expect(await readFile(path, 'utf8')).toBe('verified-cache');
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
 });

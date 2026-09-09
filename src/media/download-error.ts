@@ -5,10 +5,10 @@ const ERROR_BODY_TIMEOUT_MS = 1000;
 
 /** Safe to persist and show to users; never retains HTTP headers or config. */
 export class AttachmentDownloadError extends Error {
-  constructor(readonly messageId: string, readonly sizeExceeded: boolean) {
-    super(sizeExceeded
+  constructor(readonly messageId: string, readonly sizeExceeded: boolean, message?: string) {
+    super(message ?? (sizeExceeded
       ? '附件超过飞书下载限制，请压缩或拆分后重新发送。 / Attachment exceeds the Feishu download limit. Please compress or split it and resend.'
-      : '附件下载失败，请重新发送附件后再试。 / Attachment download failed. Please resend the attachment and try again.');
+      : '附件下载失败，请重新发送附件后再试。 / Attachment download failed. Please resend the attachment and try again.'));
     this.name = 'AttachmentDownloadError';
   }
 }

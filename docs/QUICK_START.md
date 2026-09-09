@@ -346,3 +346,8 @@ For local, resumable PDF OCR, install `ocr-requirements.txt` into a Python 3.11â
 
 
 To replace a legacy PDF OCR skill, back up the old skill and link the packaged `skills/pdf-ocr` directory into the workspace skill directory. The only command is `scripts/ocr.py`; remove obsolete command aliases. See README for commands and bridge discovery. Run one command for a whole PDF instead of launching manual parallel batches. A bound Feishu session receives an independent progress-bar card; use `--local` explicitly if no card is needed.
+
+
+## Optional smart group replies
+
+Set `DSH_LARK_SMART_INTERVENTION=true` in the host plugin environment, with `DSH_LARK_GROUP_NO_AT=false`. As a configured bot admin, @ the bot with `/intervene on` in the desired group; `/intervene off` disables that group, and `/intervene status` shows its state. Group-history permission and explicit user allowlisting are required. Smart replies are brief, selective, and use no tools; @ the bot for full agent tasks.

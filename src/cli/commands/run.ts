@@ -815,7 +815,15 @@ export async function startBridgeEngine(
     defaultWorkspace,
     accessDefaultDeny: env.accessDefaultDeny,
     eventFreshnessMs: env.eventFreshnessMs,
-    groupNoAt: env.groupNoAt,
+    ...(env.smartIntervention && options.feedbackGenerate ? { smartIntervention: {
+      chats: env.smartInterventionChats, settingsPath: paths.profilePath(profileName, 'smart-intervention.json'), cooldownMs: env.smartInterventionCooldownMs,
+      generate: async (system: string, prompt: string, signal: AbortSignal) => {
+        const route = await dshConfig.defaultModelSelection();
+        if (!route) throw new Error('Smart intervention requires a configured model');
+        return options.feedbackGenerate!({ system, prompt, signal, maxTokens: 768, ...route });
+      },
+    } } : {}),
+    groupNoAt: env.smartIntervention ? false : env.groupNoAt,
     groupPollMs: env.groupPollMs,
     isTrustedBot: (openId) => fleet.isTrustedPeer(openId, profileName),
     botHandoffMax: env.botHandoffMax,

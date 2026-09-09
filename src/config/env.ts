@@ -44,6 +44,9 @@ export interface RuntimeEnv {
   conversationLearning: boolean;
   /** Opt-in group history polling to receive messages that do not mention the bot. */
   groupNoAt: boolean;
+  smartIntervention: boolean;
+  smartInterventionChats: string[];
+  smartInterventionCooldownMs: number;
   /** Poll interval for group no-at history reads (minimum 1000ms). */
   groupPollMs: number;
   /** Maximum consecutive bot @ handoffs observed by one instance before it stops. */
@@ -321,6 +324,9 @@ export function loadRuntimeEnv(
     feedbackRepair: parseBoolean(source.DSH_LARK_FEEDBACK_REPAIR, false),
     feedbackMemory: parseBoolean(source.DSH_LARK_FEEDBACK_MEMORY, false),
     conversationLearning: parseBoolean(source.DSH_CONVERSATION_LEARNING, false),
+    smartIntervention: parseBoolean(source.DSH_LARK_SMART_INTERVENTION, false),
+    smartInterventionChats: parseDshArgs(source.DSH_LARK_SMART_INTERVENTION_CHATS),
+    smartInterventionCooldownMs: parseIntAtLeast(source.DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS, 180_000, 30_000, 'DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS'),
     groupNoAt: parseBoolean(source.DSH_LARK_GROUP_NO_AT, false),
     groupPollMs: parseIntAtLeast(
       source.DSH_LARK_GROUP_POLL_MS,

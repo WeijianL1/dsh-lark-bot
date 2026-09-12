@@ -16,17 +16,6 @@ export interface WebAdapterOptions {
   model: string;
 }
 
-/**
- * Strip the history preamble the bridge run-flow prepends and send only the
- * user's message: the web agent already resumes the full session itself, so
- * the transcript must not be embedded a second time.
- */
-function extractUserText(prompt: string): string {
-  const marker = 'Current user message:\n';
-  const idx = prompt.lastIndexOf(marker);
-  return idx === -1 ? prompt : prompt.slice(idx + marker.length);
-}
-
 function waitWithTimeout(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs > 0 ? timeoutMs : 5_000);
@@ -150,7 +139,7 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
       const promptResult = (await adapter.rpc('session.prompt', {
         sessionId,
         mode: 'queue',
-        content: [{ type: 'text', text: extractUserText(options.prompt) }],
+        content: [{ type: 'text', text: options.prompt }],
       }, promptRpcId)) as { result?: { ok: boolean; error?: { message?: string } } };
       if (!promptResult?.result?.ok) {
         throw new Error(promptResult?.result?.error?.message ?? 'web session.prompt failed');

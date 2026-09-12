@@ -1268,4 +1268,15 @@ python3 <插件目录>/skills/pdf-ocr/scripts/ocr.py document.pdf --pages '1-5,8
 
 默认群内回复冷却 180 秒，可用 `DSH_LARK_SMART_INTERVENTION_COOLDOWN_MS` 调整，最小 30 秒。重复消息/重复回复被抑制；bot 正忙时不插话；新消息、@ 请求和关闭群开关会取消尚未发出的旧判断。@ 消息直接进入正常 agent 流程，不受自动回复冷却影响。未 @ 的自动补充不读取私人记忆、不下载附件、不执行工具操作，也不声称完成任务。
 
-仅在内存中保留当前 scope/workspace 最近最多 12 条、10 分钟内的白名单对话；成员隔离和话题隔离沿用现有配置。后续 @ 请求会得到同一 scope 的这些公开对话上下文，因此正常 agent 知道 bot 刚才的自动补充。服务重启不回放旧消息。使用现有群消息轮询能力和群历史权限；智能介入启用时优先于旧 `DSH_LARK_GROUP_NO_AT` 开关；没有启用智能介入的群仍要求 @，不会退回逐条回复模式。
+生产运行在智能介入及正常回复前刷新当前群/话题最近 50 条公开消息，带稳定发言人身份及历史附件目录；本地 12 条/10 分钟缓存只作为无 reader 注入时的判断器回退。历史不重新触发任务，详细边界见下节。使用现有群消息轮询能力和群历史权限；智能介入启用时优先于旧 `DSH_LARK_GROUP_NO_AT` 开关；没有启用智能介入的群仍要求 @，不会退回逐条回复模式。
+
+
+### 群聊历史与发言人身份
+
+`ChatContextReader` 在正常 run 和智能介入判断前读取飞书当前群/话题最近 50 条消息，保留发言人稳定 ID、显示名、消息时间、@ 对象和引用目标。`getChatMembers` 使用 channel 的缓存；名字不可用时不猜测。每条当前用户消息在持久对话记录中保留作者身份；旧的 role-only 历史没有可靠作者标识，不能据此把其他成员认作默认用户。Web adapter 转发完整 run prompt：新会话携带桥接历史，续接会话依赖 DSH 原生历史且不重复回放。
+
+历史只进入本轮 `ChannelContext`，不写入任务队列、不随每轮 transcript 重复归档。API 失败显式标记 unavailable；单次 API/名册等待上限 5 秒。单条文本最多 1200 字，最多 50 条；显示名 80 字、文件名 200 字。话题使用 thread 容器；API 权限仍以机器人实际授权为准。历史中的名字/正文/文件名是非可信数据，不能变为指令；历史文件名不代表已读正文。
+
+`dsh-lark-bot/file` 额外注册 `lark_read_chat_history` 与 `lark_download_attachment`，复用已有 file URL/token 和运行时 session identity 调用本地 `/chat-context`，无需新配置或凭据。前者返回消息及历史附件目录，使用 nextCursor/cursor 翻页（API page_token 在 bridge 内保存；游标绑定 chat/thread、10 分钟过期、最多 512 个），before 可用于新的历史时间查询。后者要求 message_id/file_key，通过原始 message.get 验证群/话题归属、撤回状态和资源匹配，按现有大小上限和可恢复下载策略保存到当前 workspace 的 `.lark-attachments/`；返回本地路径，不读取内容。扫描 PDF 按现有 pdf-ocr skill 使用 canonical CLI 和断点进度。刚收到且明确发给 bot 的附件仍沿用现有自动下载/OCR 路径。
+
+详见 [群聊上下文](CHAT_CONTEXT.md)。

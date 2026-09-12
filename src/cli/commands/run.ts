@@ -1,3 +1,5 @@
+import { ChatContextReader, entryFor } from '../../bridge/chat-context.js';
+import { buildChatContextHandler } from '../../notify/chat-context-handler.js';
 import { resolveLearningIdentity } from '../../learning/origin.js';
 import { LearningJournal } from '../../learning/journal.js';
 import type { ConversationLearningPort } from '../../learning/host.js';
@@ -6,7 +8,7 @@ import { MnemonFeedbackMemory } from '../../feedback/memory.js';
 import type { FeedbackGenerate } from '../../feedback/generate.js';
 import { FeedbackStore } from '../../feedback/store.js';
 import { mkdir, rm, readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentAdapter } from '../../adapters/types.js';
 import type { LarkChannel } from '@larksuite/channel';
@@ -380,7 +382,30 @@ export async function startBridgeEngine(
   });
   const notifyToken = generateNotifyToken();
   const attachmentControllers = new Set<AbortController>();
+  const chatContext = new ChatContextReader(() => larkChannel);
   const notifyServer = new NotifyServer({
+    chatContext: buildChatContextHandler({
+      reader: chatContext,
+      binding: (sessionId) => {
+        const scope = sessions.scopeForSession(sessionId);
+        const workspace = sessions.workspaceForSession(sessionId);
+        const destination = scope ? scopeDirectory.resolve(scope) : undefined;
+        if (!workspace || !destination) return undefined;
+        return { chatId: destination.chatId, workspace, ...(destination.threadId ? { threadId: destination.threadId } : {}) };
+      },
+      download: async (message, workspace, signal) => {
+        const mediaDir = join(workspace, ".lark-attachments");
+        const resource = message.resources[0]!;
+        const suffix = /\.[a-z0-9]{1,10}$/i.exec(resource.fileName ?? '')?.[0] ?? '';
+        const id = createHash('sha256').update(`${message.chatId}:${message.messageId}:${resource.fileKey}`).digest('hex');
+        await mkdir(mediaDir, { recursive: true });
+        const path = join(mediaDir, id + suffix);
+        await downloadResource(message.messageId, resource.fileKey, resource.type === 'image' ? 'image' : 'file', path,
+          { maxBytes: env.attachmentMaxBytes, signal });
+        return { path, fileName: resource.fileName ?? '[unnamed attachment]', contentRead: false,
+          next: 'Read the local file. For scanned PDFs use the pdf-ocr skill; existing OCR checkpoints are reusable.' };
+      },
+    }),
     token: notifyToken,
     resolve: (message) => {
       if (message.scope) {
@@ -577,7 +602,7 @@ export async function startBridgeEngine(
         activeRuns.delete(scope, attachmentRunId);
         attachmentControllers.delete(attachmentController);
         const messages = prepared.flatMap(({ message, attachments }) => [
-          message.content,
+          `[Current message author and references: ${JSON.stringify({ ...entryFor(message), text: undefined })}]\n${message.content}`,
           ...attachments.textFileNotes,
         ]).filter(Boolean);
         const role = roleStore.roleForScope(scope);
@@ -668,13 +693,14 @@ export async function startBridgeEngine(
           model: modelRoute?.model ?? resolvedModel,
           executionMode: executionModes.get(scope),
           channelContext: {
+            recentConversation: await chatContext.forTurn(selected[selected.length - 1]!, selected),
             channel: 'dsh-lark-bot',
             tenant: activeProfile.tenant,
             chatType: first.chatMode ?? first.chatType,
             scope,
             bridgeProfile: profileName,
             adapter: adapter.id,
-            tools: ['lark_notify', 'lark_send_file', 'lark_ask_user', 'lark_request_plan_approval', 'lark_request_secret'],
+            tools: ['lark_read_chat_history', 'lark_download_attachment', 'lark_notify', 'lark_send_file', 'lark_ask_user', 'lark_request_plan_approval', 'lark_request_secret'],
             language: languagePolicies.get(),
             secretCollection: 'available',
           },

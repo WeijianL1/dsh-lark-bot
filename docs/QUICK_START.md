@@ -351,3 +351,6 @@ To replace a legacy PDF OCR skill, back up the old skill and link the packaged `
 ## Optional smart group replies
 
 Set `DSH_LARK_SMART_INTERVENTION=true` in the host plugin environment, with `DSH_LARK_GROUP_NO_AT=false`. As a configured bot admin, @ the bot with `/intervene on` in the desired group; `/intervene off` disables that group, and `/intervene status` shows its state. Group-history permission and explicit user allowlisting are required. Smart replies are brief, selective, and use no tools; @ the bot for full agent tasks.
+
+
+群聊上下文会在回复前读取当前群/话题最近消息；需确保应用已授权读取相应历史及群成员信息。历史附件只列目录，需要时使用 `lark_download_attachment`，现有 `dsh-lark-bot/file` runtime entry 同时提供两个历史工具，升级时应同步更新该 entry 与 bridge bundle。详见 [群聊上下文](CHAT_CONTEXT.md)。

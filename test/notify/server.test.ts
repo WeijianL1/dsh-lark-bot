@@ -30,6 +30,18 @@ async function startServer(deps: {
 }
 
 describe('NotifyServer', () => {
+  it('authenticates current-chat context access before invoking any handler', async () => {
+    const chatContext = vi.fn().mockResolvedValue({ ok: true, data: { messages: [] } });
+    const server = new NotifyServer({ token: 'token', resolve: () => undefined, send: vi.fn(), chatContext });
+    servers.push(server); await server.start();
+    const url = server.url!.replace('/notify', '/chat-context');
+    const bad = await fetch(url, { method: 'POST', body: JSON.stringify({ token: 'wrong', sessionId: 's', action: 'history' }) });
+    expect(bad.status).toBe(401); await bad.text();
+    expect(chatContext).not.toHaveBeenCalled();
+    const good = await fetch(url, { method: 'POST', body: JSON.stringify({ token: 'token', sessionId: 's', action: 'history' }) });
+    expect(await good.json()).toEqual({ ok: true, data: { messages: [] } });
+  });
+
   it('authenticates OCR requests, rejects invalid pages, and aborts disconnected work', async () => {
     let workerSignal: AbortSignal | undefined;
     const ocr = vi.fn(async (_payload, signal?: AbortSignal) => {

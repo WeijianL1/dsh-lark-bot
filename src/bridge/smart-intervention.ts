@@ -19,6 +19,7 @@ interface Context {
   controller?: AbortController | undefined;
 }
 export interface InterventionDeps extends InterventionOptions {
+  recentContext?(input: Input): Promise<string>;
   authorized(input: Input): boolean;
   busy(input: Input): boolean;
   send(input: Input, text: string): Promise<void>;
@@ -145,7 +146,11 @@ export class SmartIntervention {
     let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
       const raw = await Promise.race([
-        this.deps.generate(SYSTEM, JSON.stringify({ conversation: context.history }), controller.signal),
+        (async () => {
+          const recent = await this.deps.recentContext?.(input);
+          controller.signal.throwIfAborted();
+          return this.deps.generate(SYSTEM, recent ?? JSON.stringify({ conversation: context.history }), controller.signal);
+        })(),
         new Promise<never>((_, reject) => {
           deadline = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, 30_000);
           deadline.unref?.();

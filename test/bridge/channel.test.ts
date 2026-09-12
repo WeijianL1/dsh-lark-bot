@@ -1371,7 +1371,8 @@ describe('startChannel', () => {
       expect(pending.push).toHaveBeenCalledOnce();
       expect(pending.push.mock.calls[0]?.[1].messageId).toBe('direct');
       expect(fake.sent.length).toBe(before);
-      expect(pending.push.mock.calls[0]?.[1].content).toContain('这里补充一个相关信息');
+      // History is fetched at run time, not baked into the durable user message.
+      expect(pending.push.mock.calls[0]?.[1].content).toBe('请详细分析');
       await (fake.handlers.message as (msg: NormalizedMessage) => Promise<void>)(message({
         messageId: 'disable', chatId: 'oc-group', chatType: 'group', chatMode: 'group', senderId: 'ou-allowed',
         senderType: 'user', content: '/intervene off', createTime: Date.now(),

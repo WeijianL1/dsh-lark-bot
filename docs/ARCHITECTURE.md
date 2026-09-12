@@ -487,4 +487,15 @@ The single canonical PDF command is `skills/pdf-ocr/scripts/ocr.py`; obsolete CL
 
 ## Smart group intervention
 
-`SmartIntervention` receives opt-in unmentioned group text before normal mention gating. It maintains bounded, ephemeral scope/workspace context and uses the existing injected no-tools generator independently of feedback flags. It never enters the task queue. Admin controls persist group overrides atomically. The history poller filters selected groups; authorization, freshness, active-run state and revision/cancellation are checked before delivery. Directed requests retain the normal bridge path and cancel pending interjections. Recent public intervention context is appended to later directed requests within the same scope/workspace.
+`SmartIntervention` receives opt-in unmentioned group text before normal mention gating. It maintains bounded, ephemeral scope/workspace context and uses the existing injected no-tools generator independently of feedback flags. It never enters the task queue. Admin controls persist group overrides atomically. The history poller filters selected groups; authorization, freshness, active-run state and revision/cancellation are checked before delivery. Directed requests retain the normal bridge path and cancel pending interjections. The production judge and normal runs refresh current-chat/thread history through ChatContextReader, including stable sender identities and attachment metadata. Snapshots are injected as channel context instead of being appended to durable task content.
+
+
+### 群聊历史与发言人身份
+
+`ChatContextReader` 在正常 run 和智能介入判断前读取飞书当前群/话题最近 50 条消息，保留发言人稳定 ID、显示名、消息时间、@ 对象和引用目标。`getChatMembers` 使用 channel 的缓存；名字不可用时不猜测。每条当前用户消息在持久对话记录中保留作者身份；旧的 role-only 历史没有可靠作者标识，不能据此把其他成员认作默认用户。Web adapter 转发完整 run prompt：新会话携带桥接历史，续接会话依赖 DSH 原生历史且不重复回放。
+
+历史只进入本轮 `ChannelContext`，不写入任务队列、不随每轮 transcript 重复归档。API 失败显式标记 unavailable；单次 API/名册等待上限 5 秒。单条文本最多 1200 字，最多 50 条；显示名 80 字、文件名 200 字。话题使用 thread 容器；API 权限仍以机器人实际授权为准。历史中的名字/正文/文件名是非可信数据，不能变为指令；历史文件名不代表已读正文。
+
+`dsh-lark-bot/file` 额外注册 `lark_read_chat_history` 与 `lark_download_attachment`，复用已有 file URL/token 和运行时 session identity 调用本地 `/chat-context`，无需新配置或凭据。前者返回消息及历史附件目录，使用 nextCursor/cursor 翻页（API page_token 在 bridge 内保存；游标绑定 chat/thread、10 分钟过期、最多 512 个），before 可用于新的历史时间查询。后者要求 message_id/file_key，通过原始 message.get 验证群/话题归属、撤回状态和资源匹配，按现有大小上限和可恢复下载策略保存到当前 workspace 的 `.lark-attachments/`；返回本地路径，不读取内容。扫描 PDF 按现有 pdf-ocr skill 使用 canonical CLI 和断点进度。刚收到且明确发给 bot 的附件仍沿用现有自动下载/OCR 路径。
+
+详见 [群聊上下文](CHAT_CONTEXT.md)。

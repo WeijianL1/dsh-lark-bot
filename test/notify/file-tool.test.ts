@@ -6,6 +6,19 @@ const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; vi.restoreAllMocks(); });
 
 describe('lark_send_file tool plugin', () => {
+  it('registers scoped history and attachment tools using the active session identity', async () => {
+    const register = vi.fn();
+    applyFileTool({ tools: { register } } as never, { endpoint: 'http://127.0.0.1/file', token: 'secret' });
+    const history = register.mock.calls.map((c) => c[0] as RawToolDefinition).find((t) => t.name === 'lark_read_chat_history')!;
+    const download = register.mock.calls.map((c) => c[0] as RawToolDefinition).find((t) => t.name === 'lark_download_attachment')!;
+    const fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ ok: true }) });
+    globalThis.fetch = fetchMock as never;
+    await history.execute({ cursor: 'next' }, { agent: { session: { id: 's' } } } as never);
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body)).toEqual({ token: 'secret', sessionId: 's', action: 'history', cursor: 'next' });
+    await download.execute({ message_id: 'm', file_key: 'f' }, { agent: { session: { id: 's' } } } as never);
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1].body)).toEqual({ token: 'secret', sessionId: 's', action: 'download', messageId: 'm', fileKey: 'f' });
+  });
+
   it('posts the active session and runtime cwd to the authenticated callback', async () => {
     const register = vi.fn();
     applyFileTool({ tools: { register } } as never, { endpoint: 'http://127.0.0.1/file', token: 'secret' });

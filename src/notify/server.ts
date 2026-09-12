@@ -6,6 +6,7 @@ import type { MentionTarget } from '../bridge/types.js';
 import type { AskPayload, AskResult } from './ask-handler.js';
 import type { PlanPayload, PlanResult } from './plan-handler.js';
 import type { ApprovalPayload, ApprovalResult } from './approval-handler.js';
+import type { ChatContextPayload, ChatContextResult } from './chat-context-handler.js';
 import type { FilePayload, FileResult } from './file-handler.js';
 import type { OcrPayload } from '../media/ocr-handler.js';
 import type { SecretPayload, SecretResult } from './secret-handler.js';
@@ -44,7 +45,8 @@ export interface NotifyServerDeps {
   plan?: (payload: PlanPayload, signal?: AbortSignal) => Promise<PlanResult>;
   /** Optional handler for dsh rc.8 one-shot tool approval requests. */
   approval?: (payload: ApprovalPayload, signal?: AbortSignal) => Promise<ApprovalResult>;
-  /** Optional handler for the `lark_send_file` channel. */
+  /** Session-bound, read-only history and on-demand attachment download. */
+  chatContext?: (payload: ChatContextPayload, signal: AbortSignal) => Promise<ChatContextResult>;
   file?: (payload: FilePayload) => Promise<FileResult>;
   ocr?: (payload: OcrPayload, signal?: AbortSignal) => Promise<{ ok: boolean; error?: string; textPath?: string; reportPath?: string; reviewPages?: number[]; totalPages?: number }>;
   secret?: (payload: SecretPayload, signal?: AbortSignal) => Promise<SecretResult>;
@@ -164,6 +166,17 @@ export class NotifyServer {
       const body = await readBody(req);
       if (req.method !== 'POST') {
         respond(404, { ok: false, error: 'not found' });
+        return;
+      }
+      if (req.url === '/chat-context') {
+        if (!this.deps.chatContext) { respond(404, { ok: false, error: 'chat context unavailable' }); return; }
+        const payload = JSON.parse(body) as ChatContextPayload;
+        if (payload.token !== this.token) { respond(401, { ok: false, error: 'invalid token' }); return; }
+        if (typeof payload.sessionId !== 'string' || !payload.sessionId || !['history', 'download'].includes(payload.action)) {
+          respond(400, { ok: false, error: 'sessionId and supported action required' }); return;
+        }
+        const result = await waitForHuman((signal) => this.deps.chatContext!(payload, signal));
+        respond(result.ok ? 200 : 400, { ...result });
         return;
       }
       if (req.url === '/ask') {

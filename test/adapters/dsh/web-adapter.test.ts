@@ -17,6 +17,24 @@ class FakeWebSocket extends EventTarget {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('WebDshAdapter prompt provenance', () => {
+  it.each([undefined, 'existing'])('preserves history and identity context for session %s', async (sessionId) => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const prompt = '[Channel context] sender=A\nContinue the conversation using the history below.\nUser B: file.pdf\nCurrent user message:\nRead that file';
+    const calls: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (body.method === 'session.create') return new Response(JSON.stringify({ result: { ok: true, value: { sessionId: 'fresh' } } }));
+      calls.push(body.payload.content);
+      queueMicrotask(() => FakeWebSocket.latest?.emit({ payload: { type: 'session/event', sessionId: sessionId ?? 'fresh', event: { type: 'turn/end', data: { reason: { kind: 'completed' } } } } }));
+      return new Response(JSON.stringify({ result: { ok: true } }));
+    }));
+    const adapter = new WebDshAdapter({ provider: 'p', model: 'm' });
+    const run = adapter.run({ runId: 'r', prompt, cwd: '/repo', sessionId, model: 'm', images: undefined, stopGraceMs: 1000 });
+    for await (const _event of run.events) { /* drain */ }
+    expect(calls).toEqual([[{ type: 'text', text: prompt }]]);
+    await adapter.dispose();
+  });
+
   it('durably records the request rpcId before sending a Feishu-origin prompt', async () => {
     const order: string[] = [];
     let promptRpcId = '';

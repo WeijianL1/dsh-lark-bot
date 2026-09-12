@@ -25,6 +25,16 @@ describe('renderCard', () => {
     expect(text).toContain('无响应 65s');
   });
 
+  it('distinguishes human waiting from a stalled run in both card formats', () => {
+    const state = { ...initialState, waitingForUser: true, startedAtMs: 1, lastActivityMs: 1 };
+    for (const render of [renderCard, renderLegacyCard]) {
+      const text = JSON.stringify(render(state, 'standard', 100_000));
+      expect(text).toContain('等待你的补充');
+      expect(text).not.toContain('无响应');
+      expect(JSON.stringify(render({ ...state, terminal: 'done' }, 'standard', 100_000))).not.toContain('等待你的补充');
+    }
+  });
+
   it.each(['compact', 'standard', 'detailed'] as const)('keeps %s completion metrics frozen, even without tokens or an answer', (density) => {
     const state = { ...initialState, terminal: 'done' as const, footer: null,
       model: 'openai-codex/gpt-5.6-sol', requestReceivedAtMs: 1_000,

@@ -354,3 +354,5 @@ Set `DSH_LARK_SMART_INTERVENTION=true` in the host plugin environment, with `DSH
 
 
 群聊上下文会在回复前读取当前群/话题最近消息；需确保应用已授权读取相应历史及群成员信息。历史附件只列目录，需要时使用 `lark_download_attachment`，现有 `dsh-lark-bot/file` runtime entry 同时提供两个历史工具，升级时应同步更新该 entry 与 bridge bundle。详见 [群聊上下文](CHAT_CONTEXT.md)。
+
+等待与超时诊断：聊天历史解析跳过空字段；提问卡投递最多 15 秒，投递成功后等回答最多 2 分钟，过期不会视为批准。详见 [RCA](RCA_WAIT_LATENCY.md)。

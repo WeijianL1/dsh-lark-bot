@@ -428,6 +428,9 @@ export async function startBridgeEngine(
       scopeDirectory,
       questions,
       channel: {
+        updateCard: async (messageId, card) => {
+          if (larkChannel) await larkChannel.updateCard(messageId, card);
+        },
         sendCard: async (chatId, card, options) => {
           if (!streaming) throw new Error('bridge channel is not ready');
           if (!streaming.sendCard) throw new Error('bridge channel does not support cards');

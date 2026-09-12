@@ -299,6 +299,24 @@ describe('runAgentBatch', () => {
     await expect(approvalA).resolves.toBe('allowed-once');
   });
 
+  it.each(['session-a', 'session-b'])('shows human waiting only for the active session (%s)', async (questionSession) => {
+    const questions = new QuestionRegistry();
+    const pending = questions.register('chat-wait', { kind: 'text', question: 'Q' }, questionSession);
+    const fake = makeChannel();
+    await runAgentBatch({
+      scope: 'chat-wait', chatId: 'chat-wait', messages: ['run'],
+      adapter: fakeAdapter([
+        { type: 'system', sessionId: 'session-b', cwd: '/tmp/project', model: 'm' },
+        { type: 'text', delta: 'working' },
+        { type: 'done', sessionId: 'session-b', terminationReason: 'normal' },
+      ]),
+      sessions: new SessionStore(':memory:'), workspaces: new WorkspaceStore(':memory:'),
+      activeRuns: new ActiveRuns(), questions, channel: fake.channel, defaultWorkspace: '/tmp/project',
+    });
+    expect(fake.updates.some((card) => JSON.stringify(card).includes('等待你的补充'))).toBe(questionSession === 'session-b');
+    questions.cancel('chat-wait', pending.id);
+  });
+
   it('does not cancel another concurrent session question when this run completes', async () => {
     const questions = new QuestionRegistry();
     const questionA = questions.register(

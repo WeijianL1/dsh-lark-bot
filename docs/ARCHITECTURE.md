@@ -499,3 +499,5 @@ The single canonical PDF command is `skills/pdf-ocr/scripts/ocr.py`; obsolete CL
 `dsh-lark-bot/file` 额外注册 `lark_read_chat_history` 与 `lark_download_attachment`，复用已有 file URL/token 和运行时 session identity 调用本地 `/chat-context`，无需新配置或凭据。前者返回消息及历史附件目录，使用 nextCursor/cursor 翻页（API page_token 在 bridge 内保存；游标绑定 chat/thread、10 分钟过期、最多 512 个），before 可用于新的历史时间查询。后者要求 message_id/file_key，通过原始 message.get 验证群/话题归属、撤回状态和资源匹配，按现有大小上限和可恢复下载策略保存到当前 workspace 的 `.lark-attachments/`；返回本地路径，不读取内容。扫描 PDF 按现有 pdf-ocr skill 使用 canonical CLI 和断点进度。刚收到且明确发给 bot 的附件仍沿用现有自动下载/OCR 路径。
 
 详见 [群聊上下文](CHAT_CONTEXT.md)。
+
+等待与超时诊断：聊天历史解析跳过空字段；提问卡投递最多 15 秒，投递成功后等回答最多 2 分钟，过期不会视为批准。详见 [RCA](RCA_WAIT_LATENCY.md)。

@@ -7,6 +7,7 @@ export interface QuestionCardInput {
   options?: string[];
   placeholder?: string;
   actionScope?: string;
+  waitSeconds?: number;
 }
 
 function formElement(input: QuestionCardInput, locale: CardLocale): object {
@@ -47,6 +48,9 @@ export function renderQuestionCard(input: QuestionCardInput): object {
   const body = (locale: CardLocale) => ({
       elements: [
         { tag: 'markdown', content: `❓ ${input.question}` },
+        ...(input.waitSeconds ? [{ tag: 'markdown', content: locale === 'zh_cn'
+          ? `正在等待你的补充，最多等待 ${input.waitSeconds} 秒。未答复会结束本轮等待；之后可 @ 我补充信息继续。`
+          : `Waiting for your input for up to ${input.waitSeconds} seconds. Afterwards, mention me with the missing information to continue.` }] : []),
         {
           tag: 'markdown',
           content: locale === 'zh_cn'
@@ -111,3 +115,11 @@ export function extractQuestionAnswer(
   return kind === 'single' ? resolved[0] : resolved;
 }
 import { localizedCard, type CardLocale } from './i18n.js';
+
+/** Expired question is visibly closed: never leave an active-looking dead form. */
+export function renderExpiredQuestion(input: QuestionCardInput): object {
+  return localizedCard({
+    zhCn: { summary: '已结束等待', body: { elements: [{ tag: 'markdown', content: `⏸ **已结束等待**\n\n${input.question}\n\n尚未收到答复，没有替你作出选择。请 @ 我补充上述信息，继续处理。` }] } },
+    enUs: { summary: 'Waiting ended', body: { elements: [{ tag: 'markdown', content: `⏸ **Waiting ended**\n\n${input.question}\n\nNo answer was received and no choice was assumed. Mention me with the missing information to continue.` }] } },
+  });
+}

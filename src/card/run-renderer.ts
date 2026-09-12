@@ -30,6 +30,7 @@ function footerStatus(
   locale: CardLocale,
 ): object {
   const zh = locale === 'zh_cn';
+  if (state.waitingForUser && state.terminal === 'running') return noteMd(zh ? '请在提问卡作答；当前正在等待你的补充。' : 'Answer the question card; waiting for your input.');
   let text = zh ? '进度会自动更新' : 'Progress updates automatically';
   if (state.lastActivityMs !== undefined) {
     const idle = Math.max(0, Math.round((now - state.lastActivityMs) / 1000));
@@ -50,6 +51,7 @@ function summaryText(state: RunState, locale: CardLocale): string {
     if (hasToolWarning) return zh ? '已完成（含警告）' : 'Completed with warnings';
     return zh ? '已完成' : 'Completed';
   }
+  if (state.waitingForUser) return zh ? '等待你的补充' : 'Waiting for your input';
   if (state.footer === 'tool_running') {
     const active = state.blocks.filter((block) => block.kind === 'tool' && block.tool.status === 'running').at(-1);
     return active?.kind === 'tool' ? activityLabel(active.tool.name, locale) : zh ? '正在处理任务' : 'Working on your request';

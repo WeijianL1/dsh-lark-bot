@@ -35,7 +35,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 /** Extract visible text only, never treat card actions or resource IDs as prose. */
 function visibleText(value: unknown, depth = 0): string {
-  if (depth > 8) return '';
+  if (depth > 8 || value === null || typeof value !== 'object') return '';
   if (Array.isArray(value)) return value.slice(0, 100).map((v) => visibleText(v, depth + 1)).filter(Boolean).join('\n').slice(0, 1200);
   const v = record(value);
   if (['button', 'input', 'select_static', 'action', 'form'].includes(String(v.tag))) return '';

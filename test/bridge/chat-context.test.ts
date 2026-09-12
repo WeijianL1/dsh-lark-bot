@@ -11,6 +11,12 @@ function fixture(items: unknown[]) {
   return { reader: new ChatContextReader(() => channel as never), ...channel, list, get };
 }
 describe('Feishu conversation grounding', () => {
+  it('processes a full page of sparse cards within the metadata budget', async () => {
+    const f = fixture(Array.from({ length: 50 }, (_, i) => item(String(i), 'bot', { body: { elements: [{ tag: 'div' }] } }, { msg_type: 'interactive' })));
+    const start = performance.now();
+    expect((await f.reader.snapshot('group')).messages).toHaveLength(50);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
   it('preserves every author when requests from different people are batched', async () => {
     const f = fixture([item('a-msg', 'a', { text: 'A' }), item('b-msg', 'b', { text: 'B' })]);
     const batch = [message({ messageId: 'a-msg', senderId: 'a' }), message({ messageId: 'b-msg', senderId: 'b' })];

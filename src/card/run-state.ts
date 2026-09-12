@@ -18,6 +18,7 @@ export type FooterStatus = 'thinking' | 'tool_running' | 'streaming' | null;
 export type Terminal = 'running' | 'done' | 'interrupted' | 'error' | 'idle_timeout';
 
 export interface RunState {
+  waitingForUser?: boolean;
   /** Selected/runtime-reported route for this request. */
   model?: string | undefined;
   /** Durable bridge receipt time, including queue and attachment preparation. */

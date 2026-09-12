@@ -21,9 +21,8 @@ export interface Config {
   token?: string;
 }
 
-/** The user may take a while to answer a card; keep the tool well above the
- *  default run-timeout so the question itself is not what kills the task. */
-export const ASK_TOOL_TIMEOUT_MS = 600_000;
+/** Transport watchdog exceeds the 15-second delivery and 120-second answer budgets. */
+export const ASK_TOOL_TIMEOUT_MS = 180_000;
 
 /**
  * dsh tool that asks the user a question through a Feishu/Lark card when the
@@ -36,7 +35,7 @@ export function apply(ctx: Context, config: Config = {}) {
   (ctx as ToolPluginContext).tools.register({
       name: 'lark_ask_user',
       description:
-        'Ask the user a question through a Feishu/Lark card when you need a decision, confirmation, or missing information before proceeding. The tool blocks until the user answers. Use it sparingly and only for choices or facts only the user can provide; resolve everything discoverable by inspection yourself first.',
+        'Ask the user a question through a Feishu/Lark card when you need a decision, confirmation, or missing information before proceeding. The bridge waits up to two minutes for an answer, then returns unanswered. Do not retry the same unanswered question within the same turn; state what is missing and finish. Use it sparingly and only for choices or facts only the user can provide; resolve everything discoverable by inspection yourself first.',
       timeoutMs: ASK_TOOL_TIMEOUT_MS,
       parameters: {
         type: 'object',

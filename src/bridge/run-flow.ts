@@ -295,6 +295,9 @@ async function runAttempt(
   let sawActivity = false;
   let resumeFailure: string | undefined;
   let activeSessionId = sessionId;
+  const liveCardState = (): RunState => ({ ...state,
+    waitingForUser: state.terminal === 'running' && activeSessionId !== undefined && (input.questions?.pendingCount(input.scope, activeSessionId) ?? 0) > 0,
+  });
   let activeModel = modelRoute(input.provider, input.model);
   const density = input.densityStore?.get(input.scope) ?? 'standard';
   let checkpointKey = '';
@@ -340,7 +343,7 @@ async function runAttempt(
     ): Promise<void> => {
         const safeUpdate = async (): Promise<void> => {
           try {
-            await controller.update(renderer(state, density, Date.now()));
+            await controller.update(renderer(liveCardState(), density, Date.now()));
           } catch (error) {
             log.warn('run-flow', 'card-update-failed', { scope: input.scope, error });
           }
@@ -352,7 +355,7 @@ async function runAttempt(
         const unregisterReanchor = input.runCardAnchors?.register(input.chatId, async () => {
           if (state.terminal !== 'running') return;
           try {
-            await controller.update(renderer(state, density, Date.now()));
+            await controller.update(renderer(liveCardState(), density, Date.now()));
             if (typeof controller.reanchor === 'function') await controller.reanchor();
           } catch (error) {
             log.warn('run-flow', 'card-reanchor-failed', { scope: input.scope, error });
@@ -373,7 +376,7 @@ async function runAttempt(
         let timeoutTimer: NodeJS.Timeout | undefined;
         let armTimeout: (() => void) | undefined;
         const ticker = setInterval(() => {
-          void controller.update(renderer(state, density, Date.now())).catch(() => {
+          void controller.update(renderer(liveCardState(), density, Date.now())).catch(() => {
             // The card may already be closed; the event loop still owns the
             // final state transition below.
           });
@@ -1013,6 +1016,7 @@ function renderExecutionModePreamble(mode: ExecutionMode): string {
     `[Execution mode: ${mode}]`,
     guidance,
     'Do not bypass safety, permission, or plan-approval requirements, and do not expand the user-requested scope.',
+    'Reuse verified source extracts and OCR checkpoints. Batch independent reads/searches when available. If delegating an independent review, run it in the background while doing useful work; synchronously wait only when its result is a real dependency. Avoid repeated unchanged reads and unnecessary serial model steps.',
   ].join('\n');
 }
 

@@ -71,7 +71,7 @@
 - 消息可靠性（issue #28）：普通 agent 消息必须以 messageId 幂等、先原子写 profile 级任务账本再
   进入内存队列；启动自动重放 queued，遗留 running 标记 interrupted 并保留安全 checkpoint，
   不自动重跑可能已有外部副作用的任务。`/jobs` 按 scope + workspace 对账/显式重试，`/status` 与
-  重连提示显示统计。保证仅覆盖 bridge 已接收并落盘的事件，不宣称恢复平台从未投递的消息。
+  单次恢复提示显示统计；自动重连过程中不发送“连接不稳定”过程提示。保证仅覆盖 bridge 已接收并落盘的事件，不宣称恢复平台从未投递的消息。
 - 中断命令：`/new` 只打断并清空当前 workspace 的任务；`/stop` 仍可打断 scope 内任务。
   `/cd`、`/ws use` 切换前中断旧 workspace 的 active run，但其 native session、transcript、指标与归档保留。
 - 会话续跑 `/resume`；`/status` 以可原位刷新的卡片展示工作区、有效模型、session、active runs、

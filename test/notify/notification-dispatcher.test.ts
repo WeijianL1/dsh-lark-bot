@@ -55,15 +55,23 @@ describe('NotificationDispatcher', () => {
     expect(broadcast).not.toHaveBeenCalled();
   });
 
-  it('broadcasts urgent/fault events to every enabled sink', async () => {
+  it('can broadcast urgent/fault events to sinks without posting to Feishu', async () => {
     const directory = new ScopeDirectory(':memory:');
     directory.register('chat-a', 'chat-a', undefined);
-    const preferences = { resolve: () => preference({}) } as unknown as NotificationPreferenceStore;
+    const preferences = { resolve: () => preference({ events: ['urgent'] }) } as unknown as NotificationPreferenceStore;
     const send = vi.fn().mockResolvedValue(undefined);
     const broadcast = vi.fn().mockResolvedValue({ delivered: 2, failures: [], total: 2 });
     const sinks = { broadcast, enabledChannels: () => [{ id: 'tg-main' }, { id: 'wecom-main' }] } as unknown as OutboundSinkRegistry;
     const dispatcher = new NotificationDispatcher({ preferences, scopeDirectory: directory, send, sinks });
-    await dispatcher.notifyUrgent('chat-a', { zh: '🔴 连接异常', en: '🔴 Connection fault' });
-    expect(broadcast).toHaveBeenCalledWith(['tg-main', 'wecom-main'], expect.objectContaining({ event: 'urgent', scope: 'chat-a', title: { zh: '🔴 连接异常', en: '🔴 Connection fault' } }));
+    const title = { zh: '🔴 连接异常', en: '🔴 Connection fault' };
+
+    await dispatcher.notifyUrgentSinks('chat-a', title);
+    expect(broadcast).toHaveBeenCalledWith(['tg-main', 'wecom-main'], expect.objectContaining({ event: 'urgent', scope: 'chat-a', title }));
+    expect(send).not.toHaveBeenCalled();
+
+    await dispatcher.notifyUrgent('chat-a', title);
+    expect(broadcast).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith('chat-a', expect.stringContaining('连接异常'), {});
   });
 });

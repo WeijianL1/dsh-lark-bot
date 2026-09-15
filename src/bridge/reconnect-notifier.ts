@@ -24,7 +24,9 @@ export class ReconnectNotifier {
     this.startedAt = this.now();
     const zhCn = '⚠️ 机器人连接不稳定，正在自动重连；期间的新消息可能延迟处理。';
     const enUs = '⚠️ The bot connection is unstable and reconnecting automatically. New messages may be delayed.';
-    await this.send(zhCn, enUs);
+    // Transient reconnect attempts are noisy in the active Feishu/Lark chat.
+    // Keep the episode state and optional out-of-band fault fan-out, then send
+    // a single in-chat reconciliation notice only after recovery.
     await this.fault(this.directory?.recentDestination()?.scope, { zh: zhCn, en: enUs });
   }
 

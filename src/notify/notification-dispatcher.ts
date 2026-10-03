@@ -71,16 +71,7 @@ export class NotificationDispatcher {
    * the `urgent` event it is also sent to Feishu.
    */
   async notifyUrgent(scope: string, title: BilingualTitle, detail?: string): Promise<void> {
-    const channels = this.deps.sinks?.enabledChannels() ?? [];
-    if (channels.length > 0) {
-      await this.broadcastSinks(
-        channels.map((channel) => channel.id),
-        scope,
-        'urgent',
-        title,
-        detail,
-      );
-    }
+    await this.notifyUrgentSinks(scope, title, detail);
     const preference = this.deps.preferences.resolve(scope, this.defaultPreference);
     if (!preference?.events.includes('urgent')) return;
     const destination = preference.target
@@ -95,6 +86,19 @@ export class NotificationDispatcher {
     } catch (error) {
       log.warn('notification', 'urgent-send-failed', { scope, error });
     }
+  }
+
+  /** Broadcast an urgent/fault event to every enabled outbound sink without posting to Feishu/Lark. */
+  async notifyUrgentSinks(scope: string, title: BilingualTitle, detail?: string): Promise<void> {
+    const channels = this.deps.sinks?.enabledChannels() ?? [];
+    if (channels.length === 0) return;
+    await this.broadcastSinks(
+      channels.map((channel) => channel.id),
+      scope,
+      'urgent',
+      title,
+      detail,
+    );
   }
 
   scheduleApprovalReminder(scope: string, toolName: string): () => void {

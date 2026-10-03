@@ -237,7 +237,7 @@ Web 的 `tools/pre-execute` 先向 `/approval` 发 `policyCheckOnly` 请求，�
 `completed|failed|approval|urgent` 事件、mention open_id、出站渠道 id（`sinks`）与审批提醒延迟。更新为 awaited atomic write，
 并用 `false` 保存相对 Web profile default 的显式关闭；缺项继承 `notificationDefault`，`undefined`
 重置为继承。失败回滚。`NotificationDispatcher` 在 durable job 终态落盘后发送完成/失败提醒，并按偏好 `sinks`
-追加转发到出站渠道；`notifyUrgent()` 面向突发/故障事件广播到全部启用渠道。SDK/Web 与 ACP
+追加转发到出站渠道；`notifyUrgent()` 面向突发/故障事件广播到全部启用渠道，并按 `urgent` 偏好发送飞书提醒；`notifyUrgentSinks()` 只广播外部渠道，不向飞书发消息。SDK/Web 与 ACP
 审批卡创建后启动单次 timer，结算/取消即清除。发送失败只记日志，不改变 job/approval outcome。
 
 `src/bot/reply-policy-store.ts` 提供 `ReplyPolicyStore`（`<profile>/reply-policies.json`，0600），
@@ -929,8 +929,8 @@ destination, secret, enabled, mentionMap? }`，`OutboundSinkRegistry.broadcast(i
 渠道 best-effort 投递（单渠道失败不阻塞），`TelegramSink` 走官方 Bot API `sendMessage`、
 `WeComSink` 走企业微信群机器人 webhook。`/channels list|show|add|remove|enable|disable` 由管理员使用，
 凭据只存 0600 文件、从不回显（`maskSecret` / `maskChannel`）；`/status` 显示启用渠道 id。
-`NotificationDispatcher.notify()` 在飞书路径后按偏好 `sinks` 追加转发，`notifyUrgent()` 把突发 / 故障
-事件广播到全部启用渠道。
+`NotificationDispatcher.notify()` 在飞书路径后按偏好 `sinks` 追加转发；`notifyUrgent()` 把突发 / 故障
+事件广播到全部启用渠道，并在 scope 显式启用 `urgent` 时发送飞书提醒；`notifyUrgentSinks()` 仅广播外部渠道。自动重连及恢复路径只调用后者，始终不向飞书 / Lark 会话发送连接状态消息。
 `/replies set merge=N batch=N interval=N dedupe=N` 由 profile 管理员或当前群的群主/群管理员配置当前 scope 的最终回答合并、每批任务
 上限、批次最小发送间隔与同发送者近似去重窗口；`show` 对所有成员开放，`default` 恢复兼容默认。
 

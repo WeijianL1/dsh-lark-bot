@@ -273,7 +273,6 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     : undefined;
   sessionProjection?.rehydrateSessionMappings();
   const reconnectNotifier = new ReconnectNotifier(
-    commandChannel,
     deps.scopeDirectory,
     Date.now,
     deps.jobs

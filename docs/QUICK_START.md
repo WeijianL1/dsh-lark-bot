@@ -87,7 +87,7 @@ dsh-lark-bot service logs --profile dsh-lark -f
 ```
 
 `start|stop|restart|uninstall` 管理完整生命周期；这只是 OS 托管同一 profile，不是第二套引擎。
-机器睡眠/断网时不能收消息，恢复连接后会向最近活跃会话提示。默认安全网守护见第 6 节。
+机器睡眠/断网时不能收消息；自动重连及恢复均不向飞书/Lark 会话发送提示，避免干扰正常聊天。已配置的外部故障通知渠道仍可接收连接状态事件。默认安全网守护见第 6 节。
 
 要在同一群加入多个独立机器人，可为每个 PersonalAgent 创建一个实例：
 

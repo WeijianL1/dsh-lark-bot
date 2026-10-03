@@ -212,8 +212,8 @@ Linux 优先使用 systemd user unit，无 user systemd 时回退 XDG supervisor
 Windows 使用登录计划任务。服务异常退出会自动重启，`doctor` 会报告已安装服务的状态。guardian 发现
 正常引擎掉线时会优先重启该受管服务，避免重复拉起；`upgrade --restart` 也走同一路径。`stop` /
 `uninstall` 会持久记录“期望停止”，guardian 不会擅自拉起；install/start 若检测到同 profile 的前台
-进程会拒绝并提示先停止，生命周期锁阻止并发双启动。机器睡眠或断网期间 WebSocket 无法收消息；恢复后
-SDK 自动重连，并向最近活跃会话发送恢复提示。
+进程会拒绝并提示先停止，生命周期锁阻止并发双启动。机器睡眠或断网期间 WebSocket 无法收消息；SDK
+自动重连及恢复均不向飞书 / Lark 会话发送连接状态提示；已配置的外部故障通知渠道仍可接收相关事件。
 
 ---
 

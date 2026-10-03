@@ -795,7 +795,7 @@ export async function startBridgeEngine(
     notificationPreferences,
     notificationChannels,
     notificationSinks,
-    faultNotifier: (scope, title, detail) => notificationDispatcher.notifyUrgent(scope, title, detail),
+    faultNotifier: (scope, title, detail) => notificationDispatcher.notifyUrgentSinks(scope, title, detail),
     ...(defaultNotificationPreference
       ? { defaultNotificationPreference: { ...defaultNotificationPreference, events: [...defaultNotificationPreference.events] } }
       : {}),

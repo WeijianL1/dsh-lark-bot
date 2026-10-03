@@ -65,7 +65,7 @@ dsh-lark-bot service logs --profile dsh-lark -f
 但不删配置、会话、日志。异常退出由系统自动重启；guardian 与 `upgrade --restart` 会优先操作受管服务防双实例。
 停止意图持久写入 `service/<profile>.intent.json`，因此 guardian 不会撤销显式 stop/uninstall；
 install/start 会拒绝同 profile 的既有前台进程，并以生命周期锁避免并发双启动。
-机器睡眠 / 断网期间不能接收新消息，恢复后会自动重连并向最近活跃会话提示。
+机器睡眠 / 断网期间不能接收新消息；自动重连及恢复均不向飞书 / Lark 会话发送提示，避免连接抖动打扰正常聊天。已配置的外部故障通知渠道仍可接收连接状态事件。
 
 已拥有应用时，可跳过扫码：
 

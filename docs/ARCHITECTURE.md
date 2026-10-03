@@ -302,7 +302,7 @@ TUI/WebUI 的 active session 不参与 binding 决策。
    状态写入并发时不会丢失一次性退出事件或永久挂起；该顺序由受控时钟竞态测试锁定。
    `service/<profile>.intent.json` 持久化 running/stopped 意图，stop/uninstall 后 guardian 不回拉；
    生命周期目录锁串行化 mutation，install/start 会拒绝已存在的未受管同 profile 进程；仅当该进程由 resident guardian 派生时才自动接管（issue #112 Bug D）。
-   WebSocket 在机器睡眠 / 断网期间无法收消息；自动重连过程中不向活跃会话发送临时告警，恢复后仅向最近活跃 destination 发一次带账本对账的恢复通知。
+   WebSocket 在机器睡眠 / 断网期间无法收消息；自动重连及恢复均不向飞书 / Lark 会话发送连接状态通知，避免连接抖动打扰正常聊天；故障类事件仍可通过已配置的外部通知渠道投递。
 10. **一键彻底升级（issue #10）**：`dsh-lark-bot upgrade` 从任意旧版本（含 0.7.0 前遗留形态）
    一条命令完成 包本体（`dsh plugin add <name>@<latest>`）→ guardian 幂等重装并重启 →
    runtime profile（dsh-lark-sdk / dsh-lark-acp）own-package 链接修复，以及 runtime profile 与被链接

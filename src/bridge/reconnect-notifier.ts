@@ -1,6 +1,4 @@
-import type { CommandChannel } from '../commands/index.js';
 import type { ScopeDirectory } from './scope-directory.js';
-import { bilingualMarkdown } from '../card/i18n.js';
 
 interface FaultTitle {
   zh: string;
@@ -11,7 +9,6 @@ export class ReconnectNotifier {
   private startedAt: number | undefined;
 
   constructor(
-    private readonly channel: CommandChannel,
     private readonly directory: ScopeDirectory | undefined,
     private readonly now: () => number = Date.now,
     private readonly reconciliation?: (scope: string) => { zhCn: string; enUs: string },
@@ -24,9 +21,9 @@ export class ReconnectNotifier {
     this.startedAt = this.now();
     const zhCn = '⚠️ 机器人连接不稳定，正在自动重连；期间的新消息可能延迟处理。';
     const enUs = '⚠️ The bot connection is unstable and reconnecting automatically. New messages may be delayed.';
-    // Transient reconnect attempts are noisy in the active Feishu/Lark chat.
-    // Keep the episode state and optional out-of-band fault fan-out, then send
-    // a single in-chat reconciliation notice only after recovery.
+    // Reconnect chatter is noisy in the active Feishu/Lark chat. Keep the
+    // episode state and optional out-of-band fault fan-out without posting an
+    // in-chat warning.
     await this.fault(this.directory?.recentDestination()?.scope, { zh: zhCn, en: enUs });
   }
 
@@ -38,17 +35,9 @@ export class ReconnectNotifier {
     const summary = target ? this.reconciliation?.(target.scope) : undefined;
     const zhCn = `✅ 机器人连接已恢复（中断约 ${formatDuration(elapsed)}）。${summary ? `\n${summary.zhCn}` : ''}`;
     const enUs = `✅ The bot connection recovered after about ${formatDurationEnglish(elapsed)}.${summary ? `\n${summary.enUs}` : ''}`;
-    await this.send(zhCn, enUs);
+    // Recovery is intentionally silent in Feishu/Lark too. Operators may keep
+    // receiving this fault-class event through configured external sinks.
     await this.fault(target?.scope, { zh: zhCn, en: enUs });
-  }
-
-  private async send(zhCn: string, enUs: string): Promise<void> {
-    const target = this.directory?.recentDestination();
-    if (!target) return;
-    await this.channel.sendMarkdown(target.chatId, bilingualMarkdown(zhCn, enUs), {
-      ...(target.messageId ? { replyTo: target.messageId } : {}),
-      ...(target.threadId ? { threadId: target.threadId } : {}),
-    });
   }
 
   private async fault(scope: string | undefined, title: FaultTitle): Promise<void> {

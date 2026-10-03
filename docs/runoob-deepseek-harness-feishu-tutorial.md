@@ -105,7 +105,7 @@ DSH 进程崩溃后，其他方案的机器人会变成「死号」，只能回�
 安装完成后执行 `dsh-lark-bot service install --profile dsh-lark`，即可由 systemd user /
 LaunchAgent / Windows 登录计划任务托管同一个标准 dsh profile；用 `service status`、
 `service logs -f`、`service restart|stop|start|uninstall` 运维。它不是第二套桥接引擎，guardian
-与升级流程也会优先复用该服务，避免重复启动。机器睡眠期间不能收消息，恢复网络后自动重连并提示。
+与升级流程也会优先复用该服务，避免重复启动。机器睡眠期间不能收消息；恢复网络后会自动重连，但不再向飞书会话发送断联或恢复提示。
 
 ### 多角色 Agent：一个机器人，一整个团队
 

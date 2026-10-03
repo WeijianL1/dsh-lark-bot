@@ -930,7 +930,7 @@ destination, secret, enabled, mentionMap? }`，`OutboundSinkRegistry.broadcast(i
 `WeComSink` 走企业微信群机器人 webhook。`/channels list|show|add|remove|enable|disable` 由管理员使用，
 凭据只存 0600 文件、从不回显（`maskSecret` / `maskChannel`）；`/status` 显示启用渠道 id。
 `NotificationDispatcher.notify()` 在飞书路径后按偏好 `sinks` 追加转发；`notifyUrgent()` 把突发 / 故障
-事件广播到全部启用渠道，并在 scope 显式启用 `urgent` 时发送飞书提醒；`notifyUrgentSinks()` 仅广播外部渠道，供自动重连等需要避免飞书过程噪声的路径使用。
+事件广播到全部启用渠道，并在 scope 显式启用 `urgent` 时发送飞书提醒；`notifyUrgentSinks()` 仅广播外部渠道。自动重连及恢复路径只调用后者，始终不向飞书 / Lark 会话发送连接状态消息。
 `/replies set merge=N batch=N interval=N dedupe=N` 由 profile 管理员或当前群的群主/群管理员配置当前 scope 的最终回答合并、每批任务
 上限、批次最小发送间隔与同发送者近似去重窗口；`show` 对所有成员开放，`default` 恢复兼容默认。
 

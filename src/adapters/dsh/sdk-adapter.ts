@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   DeepSeekHarness,
   HarnessClient,
+  type HarnessClientOptions,
 } from '@deepseek-ai/dsh-sdk-client';
 import type {
   AgentAdapter,
@@ -22,6 +23,27 @@ export interface SdkAdapterOptions {
   probeTimeoutMs?: number;
   /** Injectable harness factory for tests. */
   harnessFactory?: (cwd: string, route: ModelRoute) => DeepSeekHarness;
+}
+
+/** Convert supported legacy launch flags to the SDK's public launch contract. */
+export function sdkLaunchOptions(launch: SdkLaunchSpec): HarnessClientOptions {
+  const args = [...launch.args];
+  const options: HarnessClientOptions = { profile: launch.profile };
+  if (launch.command === 'node') {
+    if (args[0] && !args[0].startsWith('-')) options.dshBin = args.shift()!;
+  } else if (launch.command !== 'dsh') {
+    throw new Error(`DSH 0.2 SDK cannot launch arbitrary command ${launch.command}; configure a dsh module instead`);
+  }
+  while (args.length) {
+    const flag = args.shift();
+    const value = args.shift();
+    if (!value || value.startsWith('-')) throw new Error(`Missing SDK launch value for ${flag}`);
+    if (flag === '--profile') options.profile = value;
+    else if (flag === '--patch') (options.patches ??= []).push(value);
+    else if (flag === '--home') options.dshHome = value;
+    else throw new Error(`Unsupported DSH 0.2 SDK launch flag ${flag}`);
+  }
+  return options;
 }
 
 interface RuntimeEntry {
@@ -176,9 +198,8 @@ export class SdkDshAdapter implements AgentAdapter {
       return { ok: false, error: 'adapter disposed', version: undefined };
     }
     const client = new HarnessClient({
-      command: this.launch.command,
-      args: this.launch.args,
-      cwd: process.cwd(),
+      ...sdkLaunchOptions(this.launch),
+      processCwd: process.cwd(),
       requestTimeoutMs: this.probeTimeoutMs,
     });
     try {
@@ -295,11 +316,8 @@ export class SdkDshAdapter implements AgentAdapter {
 
   private createHarness(cwd: string, route: ModelRoute): DeepSeekHarness {
     return new DeepSeekHarness({
-      launch: {
-        command: this.launch.command,
-        args: this.launch.args,
-        cwd,
-      },
+      ...sdkLaunchOptions(this.launch),
+      processCwd: cwd,
       cwd,
       provider: route.provider,
       model: route.model,

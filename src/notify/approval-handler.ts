@@ -30,6 +30,7 @@ export interface ApprovalPayload {
 
 export interface ApprovalResult {
   ok: boolean;
+  managed?: boolean;
   outcome?: ApprovalOutcome;
   error?: string;
   denial?: PolicyDenial;
@@ -54,6 +55,7 @@ export function buildApprovalHandler(
 ): (payload: ApprovalPayload, signal?: AbortSignal) => Promise<ApprovalResult> {
   return async (payload, signal) => {
     const scope = deps.sessions.scopeForSession(payload.sessionId);
+    if (!scope && payload.policyCheckOnly) return { ok: true, managed: false };
     if (!scope) return { ok: false, error: `unknown session: ${payload.sessionId}` };
     const destination = deps.scopeDirectory.resolve(scope);
     if (!destination) return { ok: false, error: `unknown scope: ${scope}` };

@@ -57,10 +57,12 @@ export function apply(ctx: Context, config: Config = {}): void {
       inFlightGrant.delete(request.agent);
       return 'allowed-once';
     }
+    if (await isUnmanagedWebSession(config, request.agent?.session?.id)) return next();
     return (await requestBridgeApproval(config, request, next)).outcome;
   });
 
   approvalCtx.on('tools/pre-execute', async (execution, next) => {
+    if (await isUnmanagedWebSession(config, (execution.agent as { session?: { id?: unknown } } | undefined)?.session?.id)) return next();
     const highRisk = isHighRiskTool(approvalCtx, execution);
     if (!highRisk && !approvalEndpoint(config)) return next();
     const request: RawApprovalRequest = {
@@ -168,4 +170,16 @@ function isPolicyDenial(value: unknown): value is PolicyDenial {
     denial.layer === 'plan-gate' || denial.layer === 'permission-policy' ||
     denial.layer === 'tool-approval' || denial.layer === 'file-sandbox'
   ) && typeof denial.reason === 'string' && typeof denial.toChange === 'string';
+}
+
+async function isUnmanagedWebSession(config: Config, sessionId: unknown): Promise<boolean> {
+  const endpoint = approvalEndpoint(config);
+  const token = config.token ?? process.env.DSH_LARK_NOTIFY_TOKEN;
+  if (!endpoint || !token || sessionId === undefined) return false;
+  try {
+    const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token, sessionId: String(sessionId), toolName: 'scope-routing', policyCheckOnly: true }), signal: AbortSignal.timeout(5000) });
+    const body = await response.json() as { ok?: boolean; managed?: boolean };
+    return response.ok && body.ok === true && body.managed === false;
+  } catch { return false; }
 }

@@ -32,6 +32,18 @@ import { ensureAcpProfile, resolveAcpLaunch, type AcpLaunchSpec } from './acp-ru
 import { EventChannel } from './event-channel.js';
 import { resolveModelChoice } from '../model-choice.js';
 
+/** Retry only asynchronous provider registration, on the same ACP runtime. */
+export async function createAcpSessionWhenReady(conn: Pick<ClientSideConnection, 'newSession'>, cwd: string) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await conn.newSession({ cwd, mcpServers: [] }); }
+    catch (error) {
+      const details = error && typeof error === 'object' && 'data' in error ? JSON.stringify(error.data) : '';
+      if (attempt >= 6 || !`${String(error)} ${details}`.match(/no adapter registered for provider/i)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
 export interface AcpAdapterOptions {
   launch: AcpLaunchSpec;
   provider: string;
@@ -276,7 +288,7 @@ export class AcpDshAdapter implements AgentAdapter {
         ),
       );
       const info = await conn.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} });
-      const created = await conn.newSession({ cwd, mcpServers: [] });
+      const created = await createAcpSessionWhenReady(conn, cwd);
       serverSessionId = created.sessionId;
       if (
         options.images?.length &&

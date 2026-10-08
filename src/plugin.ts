@@ -3,9 +3,9 @@ import { bindFeedbackGenerator, type FeedbackGenerate } from './feedback/generat
 import type { Context } from '@deepseek-ai/cordis';
 import { Service } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
-import {
-  settingsNamespace,
-} from '@deepseek-ai/dsh-settings';
+import type {} from '@deepseek-ai/cordis-plugin-loader';
+import { isVolatile } from '@deepseek-ai/cosmokit';
+import { HostDshAdapter } from './adapters/dsh/host-adapter.js';
 import type { AgentAdapter } from './adapters/types.js';
 import type { BridgeEngine } from './cli/commands/run.js';
 import { startBridgeEngine } from './cli/commands/run.js';
@@ -50,7 +50,7 @@ export interface Config {
   disabled?: boolean;
 }
 
-export const DSH_LARK_SETTINGS_NAMESPACE = settingsNamespace('dsh-lark-bot');
+export const DSH_LARK_SETTINGS_NAMESPACE = 'dsh-lark-bot';
 
 /**
  * Cordis configuration schema. dsh Web discovers this through the registered
@@ -88,7 +88,8 @@ export const Config = Schema.object({
     .description('未单独设置会话时的提醒：关闭、仅完成/失败、全部 / Default proactive reminders'),
   disabled: Schema.boolean()
     .description('暂停机器人；保存后立即停止 / Pause the bot immediately'),
-}) as unknown as Schema<Config>;
+});
+for (const [key, field] of Object.entries(Config.dict!)) Config.dict![key] = field.volatile();
 
 /** Test-only dependency overrides; production rows configure through Config/env. */
 export interface PluginDeps {
@@ -145,13 +146,14 @@ export class LarkBridgeService extends Service {
   start(config: Config = {}, deps: PluginDeps = {}): Promise<BridgeEngine> {
     if (this.startPromise) return this.startPromise;
     const env = envForConfig(config, deps.env ?? process.env);
+    const adapter = deps.adapter ?? (env.adapterMode === 'web' ? new HostDshAdapter(this.host, { provider: 'openai-codex', model: env.model ?? 'gpt-5.6-sol' }) : undefined);
     this.startPromise = startBridgeEngine({
       env,
       profileName: config.profile ?? 'default',
       allowOnboarding: true,
       ...(env.feedbackRepair || env.feedbackMemory || env.smartIntervention ? { feedbackGenerate: this.feedbackGenerate } : {}),
       ...(deps.createChannel ? { createChannel: deps.createChannel } : {}),
-      ...(deps.adapter ? { adapter: deps.adapter } : {}),
+      ...(adapter ? { adapter } : {}),
     })
       .then((engine) => {
         this.engine = engine;
@@ -200,15 +202,16 @@ export class LarkBridgeService extends Service {
 export function apply(ctx: Context, config: Config = {}, deps: PluginDeps = {}) {
   const service = new LarkBridgeService(ctx);
   const detachTui = attachOptionalTuiSeams(ctx);
-  let source = () => config;
+  let source = () => readLiveConfig(config);
   let appliedConfig: Config | undefined;
   let revision = 0;
   let disposed = false;
   let reconcileQueue = Promise.resolve();
-  const baseConfig = hydrateSettingsBase(config, deps.env ?? process.env);
+  const baseConfig = hydrateSettingsBase(readLiveConfig(config), deps.env ?? process.env);
 
   const reconcile = (): void => {
     const desired = source();
+    if (!deps.adapter && !isDisabled(desired) && envForConfig(desired, deps.env ?? process.env).adapterMode === 'web' && !ctx.get('sessionController')) return;
     if (appliedConfig && sameConfig(desired, appliedConfig)) return;
     const ticket = ++revision;
     reconcileQueue = reconcileQueue
@@ -239,7 +242,7 @@ export function apply(ctx: Context, config: Config = {}, deps: PluginDeps = {}) 
 
   void baseConfig.then((base) => {
     if (disposed) return;
-    source = () => base;
+    source = () => ({ ...base, ...readLiveConfig(config) });
     reconcile();
   }).catch((error: unknown) => {
     ctx.logger.warn(
@@ -255,26 +258,18 @@ export function apply(ctx: Context, config: Config = {}, deps: PluginDeps = {}) 
     skillsContext.effect(() => disposeSkill);
   });
 
-  ctx.inject(['settings'], async (settingsContext) => {
-    const base = await baseConfig;
-    if (disposed) return;
-    const scope = settingsContext.settings.register(
-      DSH_LARK_SETTINGS_NAMESPACE,
-      Config,
-      { base, applies: 'live' },
-    );
-    source = () => scope.get();
+  ctx.inject(['sessionController'], (controllerContext) => {
     reconcile();
-    const unwatch = scope.watch(() => { reconcile(); });
-    settingsContext.effect(() => () => {
-      unwatch();
-      if (disposed) return;
-      source = () => base;
-      reconcile();
+    controllerContext.effect(() => () => {
+      if (deps.adapter || envForConfig(source(), deps.env ?? process.env).adapterMode !== 'web') return;
+      revision += 1;
+      appliedConfig = undefined;
+      reconcileQueue = reconcileQueue.catch(() => undefined).then(() => service.stop());
     });
   });
+  ctx.on('loader/volatile-update', () => { reconcile(); });
 
-  const disabled = isDisabled(config);
+  const disabled = isDisabled(readLiveConfig(config));
   ctx.logger.info(
     `[dsh-lark-bot] bundle loaded; bridge engine ${disabled ? 'disabled (DSH_LARK_DISABLED=1)' : 'will start in-process'}`,
   );
@@ -354,4 +349,11 @@ function envForConfig(config: Config, base: NodeJS.ProcessEnv): RuntimeEnv {
     env.DSH_LARK_NOTIFICATION_DEFAULT = config.notificationDefault;
   }
   return loadRuntimeEnv(env);
+}
+
+function readLiveConfig(config: Config): Config {
+  return Object.fromEntries(Object.entries(config).flatMap(([key, value]) => {
+    const current = isVolatile(value) ? value.get() : value;
+    return current === undefined ? [] : [[key, current]];
+  })) as Config;
 }

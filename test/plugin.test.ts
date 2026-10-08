@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentAdapter, AgentRun } from '../src/adapters/types.js';
+import { createVolatile, updateVolatile, isVolatile } from '@deepseek-ai/cosmokit';
 import { ConfigStore } from '../src/config/profile-store.js';
 import { effectiveProfileModel } from '../src/cli/commands/run.js';
 import {
@@ -18,51 +19,30 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-function makeCtx() {
+function makeCtx(config: Record<string, unknown> = {}) {
   const provided: Record<string, unknown> = {};
-  let settingsConsumer: ((ctx: unknown) => void | Promise<void>) | undefined;
+  const listeners = new Map<string, () => void>();
   const ctx = {
     logger: { info: vi.fn(), warn: vi.fn() },
-    reflect: {
-      provide: (name: string, value: unknown) => {
-        provided[name] = value;
-        return () => {};
-      },
-    },
-    inject: vi.fn((_deps: unknown, consumer: (ctx: unknown) => void | Promise<void>) => {
-      settingsConsumer = consumer;
+    reflect: { provide: (name: string, value: unknown) => {
+      provided[name] = value;
+      return () => {};
+    } },
+    inject: vi.fn(),
+    on: vi.fn((event: string, listener: () => void) => {
+      listeners.set(event, listener);
+      return () => listeners.delete(event);
     }),
   };
   return {
-    ctx,
-    provided,
-    async attachSettings(value?: Record<string, unknown>) {
-      let current: Record<string, unknown> = value ?? {};
-      let watcher: (() => void) | undefined;
-      let registeredBase: Record<string, unknown> = {};
-      await settingsConsumer?.({
-        settings: {
-          register: (_namespace: unknown, _schema: unknown, options: { base?: Record<string, unknown> }) => {
-            registeredBase = options.base ?? {};
-            if (value === undefined) current = registeredBase;
-            return {
-            get: () => current,
-            watch: (next: () => void) => {
-              watcher = next;
-              return () => { watcher = undefined; };
-            },
-            };
-          },
-        },
-        effect: vi.fn(),
-      });
-      return {
-        base: registeredBase,
-        update(next: Record<string, unknown>) {
-          current = next;
-          watcher?.();
-        },
-      };
+    ctx, provided,
+    async attachSettings(value: Record<string, unknown>) {
+      for (const [key, next] of Object.entries(value)) {
+        const previous = config[key];
+        if (isVolatile(previous)) updateVolatile(previous, createVolatile(next));
+        else config[key] = createVolatile(next);
+      }
+      listeners.get('loader/volatile-update')?.();
     },
   };
 }
@@ -216,7 +196,7 @@ describe('dsh-lark-bot bundle plugin', () => {
       await vi.waitFor(async () => {
         expect(await readFile(settingsFile, 'utf8')).toContain('inputModalities:');
       }, { timeout: 10_000 });
-      expect(adapter.run).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(adapter.run).toHaveBeenCalledOnce());
     } finally {
       await dispose();
     }
@@ -232,7 +212,6 @@ describe('dsh-lark-bot bundle plugin', () => {
   it('reloads the bridge when dsh Web commits a settings change', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-settings-'));
     tempDirs.push(root);
-    const { ctx, provided, attachSettings } = makeCtx();
     const adapter = fakeAdapter();
     const channels = [fakeChannel(), fakeChannel()];
     const createChannel = vi.fn()
@@ -241,6 +220,7 @@ describe('dsh-lark-bot bundle plugin', () => {
     const base = {
       profile: 'default', home: root, appId: 'cli_old', appSecret: 'secret', tenant: 'feishu' as const,
     };
+    const { ctx, provided, attachSettings } = makeCtx(base);
     const dispose = applyBridgePlugin(
       ctx as never,
       base,
@@ -259,13 +239,13 @@ describe('dsh-lark-bot bundle plugin', () => {
   it('applies safe next-task settings without disconnecting active bridge work', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-safe-settings-'));
     tempDirs.push(root);
-    const { ctx, provided, attachSettings } = makeCtx();
     const adapter = fakeAdapter();
     const channel = fakeChannel();
     const createChannel = vi.fn(() => channel);
     const base = {
       profile: 'default', home: root, appId: 'cli_safe', appSecret: 'secret', tenant: 'feishu' as const,
     };
+    const { ctx, provided, attachSettings } = makeCtx(base);
     const dispose = applyBridgePlugin(
       ctx as never,
       base,
@@ -288,7 +268,7 @@ describe('dsh-lark-bot bundle plugin', () => {
     await dispose();
   });
 
-  it('hydrates the Web settings base from scan-bound profile values', async () => {
+  it('hydrates the bridge from scan-bound profile values', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-plugin-profile-settings-'));
     tempDirs.push(root);
     const store = new ConfigStore(join(root, 'config.json'));
@@ -300,21 +280,17 @@ describe('dsh-lark-bot bundle plugin', () => {
       workspace: join(root, 'project'),
       model: 'deepseek-v4-pro',
     });
-    const { ctx, provided, attachSettings } = makeCtx();
+    const { ctx, provided } = makeCtx();
+    const createChannel = vi.fn((_options: unknown) => fakeChannel());
     const dispose = applyBridgePlugin(
       ctx as never,
       { profile: 'default', home: root },
-      { env: {}, adapter: fakeAdapter(), createChannel: vi.fn(() => fakeChannel()) as never },
+      { env: {}, adapter: fakeAdapter(), createChannel: createChannel as never },
     );
     const service = provided.larkBridge as LarkBridgeService;
     await vi.waitFor(() => expect(service.status().state).toBe('running'));
-    const settings = await attachSettings();
-    expect(settings.base).toEqual(expect.objectContaining({
-      tenant: 'lark',
-      appId: 'cli_scan_bound',
-      appSecret: 'stored-secret',
-      workspace: join(root, 'project'),
-      model: 'deepseek-v4-pro',
+    expect(createChannel.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      domain: 'https://open.larksuite.com', appId: 'cli_scan_bound', appSecret: 'stored-secret',
     }));
     await dispose();
   });

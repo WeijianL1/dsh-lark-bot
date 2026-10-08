@@ -1,6 +1,6 @@
 {
   "name": "dsh-lark-bot",
-  "version": "0.19.16",
+  "version": "0.19.17-fork.1",
   "description": "把 DeepSeek Harness (dsh) 装进飞书/Lark 的 bot，扫码即用：dsh Web 可视化设置、流式卡片、项目工作区、并行任务、多角色 Agent、安全网守护。| Bridge DeepSeek Harness into Feishu/Lark with visual dsh Web settings, streaming cards, workspaces, parallel tasks, roles and a safety-net guardian.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
@@ -108,7 +108,7 @@
     ],
     "compatibility": {
       "dshVersions": [
-        "0.1.0-rc.8"
+        "0.2.0-rc.2"
       ]
     },
     "capability": {
@@ -176,20 +176,23 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.25.1",
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-attachment": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-sdk-client": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-sdk-protocol": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-settings": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-skill": "0.1.0-rc.8",
-    "@deepseek-ai/schemastery": "3.18.1",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-skill": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@larksuite/channel": "^0.4.1",
     "commander": "^12.1.0",
     "cross-spawn": "^7.0.6",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.0-rc.2",
+    "@deepseek-ai/cosmokit": "1.8.5",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -198,10 +201,9 @@
     "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-settings": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.0-rc.8",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
@@ -210,25 +212,27 @@
     "react": "18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5"
   },
   "pnpm": {
     "overrides": {
-      "@deepseek-ai/dsh-agent": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-attachment": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-brand": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-code-runtime": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-invariants": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-llm": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-scope": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-sdk-protocol": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-session": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-subagent": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-timeout": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-tools": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-typert-protocol": "0.1.0-rc.8",
-      "@deepseek-ai/dsh-user-approval": "0.1.0-rc.8"
+      "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-brand": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-code-runtime": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-invariants": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-sdk-protocol": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-session": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-subagent": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-timeout": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-typert-protocol": "0.2.0-rc.2",
+      "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2"
     },
     "onlyBuiltDependencies": [
       "esbuild",

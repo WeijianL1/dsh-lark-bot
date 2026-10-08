@@ -14,6 +14,11 @@ afterEach(async () => {
 });
 
 describe('classifySessionError', () => {
+  it('recognizes the exact DSH 0.2 SDK duplicate-session error', () => {
+    expect(classifySessionError('session "session-1" already exists')).toBe('broken');
+    expect(classifySessionError('User says session "session-1" already exists')).toBeUndefined();
+  });
+
   it('classifies the canonical id-collision resume error as broken', () => {
     expect(
       classifySessionError(

@@ -621,7 +621,7 @@ export async function startBridgeEngine(
           (dshDefault ? `${dshDefault.provider}/${dshDefault.model}` : undefined) ??
           defaultModel;
         let modelRoute: Awaited<ReturnType<DshProviderManager['resolveRuntimeModelRoute']>>;
-        if (resolvedModel) {
+        if (resolvedModel && adapter.id !== 'dsh-web') {
           try {
             modelRoute = await dshConfig.resolveRuntimeModelRoute(resolvedModel);
           } catch (error) {
@@ -638,7 +638,7 @@ export async function startBridgeEngine(
             return;
           }
         }
-        if (resolvedModel && !modelRoute) {
+        if (resolvedModel && adapter.id !== 'dsh-web' && !modelRoute) {
           // Surface a clear configuration error instead of letting the dsh
           // runtime fail with an opaque provider/model mismatch.
           await streaming.sendMarkdown(
@@ -703,7 +703,7 @@ export async function startBridgeEngine(
             scope,
             bridgeProfile: profileName,
             adapter: adapter.id,
-            tools: ['lark_read_chat_history', 'lark_download_attachment', 'lark_notify', 'lark_send_file', 'lark_ask_user', 'lark_request_plan_approval', 'lark_request_secret'],
+            tools: ['lark_read_chat_history', 'lark_download_attachment', 'lark_notify', 'lark_send_file', 'lark_ask_user', ...(process.env.DSH_LARK_PLAN_GATE === 'off' ? [] : ['lark_request_plan_approval']), 'lark_request_secret'],
             language: languagePolicies.get(),
             secretCollection: 'available',
           },

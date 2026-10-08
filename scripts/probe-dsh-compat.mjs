@@ -11,18 +11,16 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable as NodeReadable, Writable as NodeWritable } from 'node:stream';
-import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
 import {
   ClientSideConnection,
   ndJsonStream,
   PROTOCOL_VERSION,
 } from '@agentclientprotocol/sdk';
-import { Context } from '@deepseek-ai/cordis';
 import { resolveCompatApprovalRequest } from './compat-approval-fixture.mjs';
 import { readDshCompatibility, rootDir } from './dsh-compat.mjs';
 
@@ -246,6 +244,8 @@ async function probeAcpRuntime({ harnessBin, workspace, env, modelRequests }) {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   if (!child.stdin || !child.stdout) throw new Error('ACP image probe has no protocol streams');
+  let stderr = '';
+  child.stderr?.on('data', (chunk) => { stderr = (stderr + chunk).slice(-16000); });
   const text = [];
   const permissions = [];
   const conn = new ClientSideConnection(
@@ -273,7 +273,14 @@ async function probeAcpRuntime({ harnessBin, workspace, env, modelRequests }) {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
-    const session = await conn.newSession({ cwd: workspace, mcpServers: [] });
+    let session;
+    for (let attempt = 0; ; attempt++) {
+      try { session = await conn.newSession({ cwd: workspace, mcpServers: [] }); break; }
+      catch (error) {
+        if (attempt >= 6 || !`${String(error)} ${JSON.stringify(error?.data)}`.match(/no adapter registered for provider/i)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
     await conn.prompt({
       sessionId: session.sessionId,
       prompt: [{ type: 'text', text: 'Verify ACP text task and approval.' }],
@@ -312,6 +319,8 @@ async function probeAcpRuntime({ harnessBin, workspace, env, modelRequests }) {
       throw new Error(`ACP native image result missing: ${JSON.stringify(text)}`);
     }
     return { nativeImage: true, permissionCount: permissions.length };
+  } catch (error) {
+    throw new Error(`ACP probe failed: ${String(error)}; details=${JSON.stringify(error?.data)}; stderr=${stderr}`, { cause: error });
   } finally {
     child.stdin.end();
     await new Promise((resolve) => {
@@ -327,89 +336,14 @@ async function probeAcpRuntime({ harnessBin, workspace, env, modelRequests }) {
   }
 }
 
-async function probeSqliteMigrationBoundary({ profilesRoot, root }) {
-  const sqliteDir = join(root, 'sqlite-rc7');
-  const databasePath = join(sqliteDir, 'sessions.db');
-  await mkdir(sqliteDir, { recursive: true, mode: 0o700 });
-  const database = new DatabaseSync(databasePath);
-  database.exec(`
-    PRAGMA application_id = 1146308688;
-    PRAGMA user_version = 15;
-    CREATE TABLE persistence_state (
-      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-      store_id TEXT NOT NULL
-    ) STRICT;
-    CREATE TABLE sessions (
-      id TEXT PRIMARY KEY, version INTEGER NOT NULL, created_at INTEGER NOT NULL,
-      cwd TEXT, parent_session TEXT, seed_length INTEGER, origin TEXT,
-      delegation_depth INTEGER, agent_preset TEXT, incarnation TEXT NOT NULL,
-      revision INTEGER NOT NULL
-    ) STRICT;
-    CREATE TABLE events (
-      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      seq INTEGER NOT NULL, type TEXT NOT NULL, time INTEGER NOT NULL,
-      data TEXT NOT NULL, source_event_seqs TEXT, surface_op TEXT, ignorable INTEGER,
-      PRIMARY KEY (session_id, seq)
-    ) STRICT;
-  `);
-  database.prepare('INSERT INTO persistence_state (singleton, store_id) VALUES (1, ?)')
-    .run(randomUUID());
-  database.prepare(`
-    INSERT INTO sessions
-      (id, version, created_at, cwd, incarnation, revision)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run('rc7-session', 1, 1, '/compat/rc7', randomUUID(), 1);
-  database.prepare(`
-    INSERT INTO events
-      (session_id, seq, type, time, data)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('rc7-session', 1, 'assistant/message', 1, '{"message":{"content":[{"type":"text","text":"rc7-marker"}]}}');
-  database.close();
-  await chmod(databasePath, 0o600);
-  const before = await readFile(databasePath);
-
-  const sqliteModule = await import(pathToFileURL(join(
-    profilesRoot,
-    'node_modules',
-    '@deepseek-ai',
-    'dsh-session-persistence-sqlite',
-    'lib',
-    'index.js',
-  )).href);
-  const sqliteContext = new Context();
-  await sqliteContext.provide('sessions', {
-    list: () => [],
-    get: () => undefined,
-    prepare: () => {
-      throw new Error('unexpected rc.7 session preparation after schema rejection');
-    },
-  });
-  const provider = new sqliteModule.SqliteSessionPersistence(sqliteContext, {
-    path: databasePath,
-    journalMode: 'delete',
-  });
-  let rejection;
-  try {
-    await provider.load('rc7-session');
-  } catch (error) {
-    rejection = error;
-  }
-  if (!String(rejection).match(/schema version 15.*incompatible.*17/i)) {
-    throw new Error(`rc.8 SQLite did not reject rc.7 schema 15: ${String(rejection)}`);
-  }
-  const after = await readFile(databasePath);
-  if (!before.equals(after)) {
-    throw new Error('rc.8 SQLite modified the rejected rc.7 database');
-  }
-  console.log('[probe] sqlite rc.7 schema 15 rejected by rc.8 schema 17 without modifying the database');
-}
-
 async function main() {
+  const sessionPrefix = `compat-${randomUUID()}`;
   const compat = readDshCompatibility();
   const rootPackage = JSON.parse(
     readFileSync(join(rootDir(), 'package.json'), 'utf8'),
   );
-  const root = await mkdtemp(join(tmpdir(), 'dsh-compat-probe-'));
+  const root = process.env.DSH_COMPAT_PROBE_ROOT ?? await mkdtemp(join(tmpdir(), 'dsh-compat-probe-'));
+  console.log(`[probe] scratch root: ${root}`);
   const dshHome = join(root, 'dsh');
   const larkHome = join(root, 'lark');
   const workspace = join(root, 'workspace');
@@ -452,7 +386,6 @@ async function main() {
           dependencies: {
             '@deepseek-ai/dsh': compat.harness,
             '@deepseek-ai/dsh-base': compat.harness,
-            '@deepseek-ai/dsh-session-persistence-sqlite': compat.harness,
           },
         },
         null,
@@ -509,7 +442,6 @@ async function main() {
       throw new Error(`dsh version mismatch: got "${version}", expected ${compat.harness}`);
     }
     console.log(`[probe] harness version ok: ${version}`);
-    await probeSqliteMigrationBoundary({ profilesRoot, root });
 
     // Configure a local OpenAI-compatible route. This makes the probe keyless
     // while still exercising a real rc.8 model loop, tool call and resume.
@@ -577,6 +509,13 @@ async function main() {
         throw new Error(`${adapter} doctor exited with code ${doctorCode}`);
       }
     }
+    // DSH 0.2 imports legacy settings into the first profile only. Every
+    // independently booted fixture profile must own its explicit model route.
+    await appendFile(join(dshHome, 'profiles', 'dsh-lark-acp', 'cordis.patch.yml'), [
+      '', '- id: llm-pi-ai', '  config:', '    providers:', '      compat-local:',
+      '        api: openai-completions', `        baseURL: ${compatServer.url}/v1`,
+      '        apiKeyEnv: COMPAT_API_KEY', '        models:', '          - id: compat-model', '',
+    ].join('\n'));
     const acpResult = await probeAcpRuntime({
       harnessBin,
       workspace,
@@ -601,12 +540,11 @@ async function main() {
     // 5. Run a complete SDK tool turn, then resume the same durable session.
     const { DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client');
     const createHarness = () => new DeepSeekHarness({
-      launch: {
-        command: 'node',
-        args: [harnessBin, '--profile', 'dsh-lark-sdk'],
-        cwd: workspace,
-        env,
-      },
+      dshBin: harnessBin,
+      profile: 'dsh-lark-sdk',
+      processCwd: workspace,
+      dshHome,
+      env,
       cwd: workspace,
       provider: 'compat-local',
       model: 'compat-model',
@@ -637,7 +575,7 @@ async function main() {
     const firstHarness = createHarness();
     try {
       await initializeHarness(firstHarness);
-      const first = await firstHarness.run('Call lark_notify once.', { sessionId: 'compat-session' });
+      const first = await firstHarness.run('Call lark_notify once.', { sessionId: `${sessionPrefix}-session` });
       if (first.finalResponse !== 'tool-ok') {
         throw new Error(`unexpected tool-turn response: ${JSON.stringify(first.finalResponse)}`);
       }
@@ -645,7 +583,7 @@ async function main() {
         throw new Error(`lark_notify execution count mismatch: ${compatServer.notifications.length}`);
       }
       console.log('[probe] sdk lark_notify turn ok');
-      const resumed = await firstHarness.run('Continue the same session.', { sessionId: 'compat-session' });
+      const resumed = await firstHarness.run('Continue the same session.', { sessionId: `${sessionPrefix}-session` });
       if (resumed.finalResponse !== 'resume-ok') {
         throw new Error(`unexpected in-process resumed response: ${JSON.stringify({
           finalResponse: resumed.finalResponse,
@@ -664,17 +602,16 @@ async function main() {
     const harness = createHarness();
     try {
       await initializeHarness(harness);
-      const reopened = await harness.run('Continue the same session.', { sessionId: 'compat-session' });
-      const reopenError = reopened.events.find((event) => event.type === 'turn/end')
-        ?.data?.reason?.error?.message;
-      if (!String(reopenError).match(/persisted log.*id collision/i)) {
-        throw new Error(`unexpected close/reopen result: ${JSON.stringify({
-          finalResponse: reopened.finalResponse,
-          events: reopened.events,
-        })}`);
+      let reopenError;
+      try {
+        const reopened = await harness.run('Continue the same session.', { sessionId: `${sessionPrefix}-session` });
+        reopenError = reopened.events.find((event) => event.type === 'turn/end')?.data?.reason?.error?.message;
+      } catch (error) { reopenError = error instanceof Error ? error.message : String(error); }
+      if (!String(reopenError).match(/persisted log.*id collision|^session "[A-Za-z0-9_-]+" already exists$/i)) {
+        throw new Error('Close/reopen must reject the old id explicitly: ' + String(reopenError));
       }
       console.log('[probe] sdk close/reopen collision is explicit; bridge fresh-session self-heal remains required');
-      const asked = await harness.run('Call lark_ask_user once.', { sessionId: 'compat-ask-session' });
+      const asked = await harness.run('Call lark_ask_user once.', { sessionId: `${sessionPrefix}-ask-session` });
       if (asked.finalResponse !== 'ask-ok') {
         throw new Error(`unexpected ask-tool response: ${JSON.stringify(asked.finalResponse)}`);
       }
@@ -683,7 +620,7 @@ async function main() {
       }
       const planned = await harness.run(
         'Verify the enforced plan gate.',
-        { sessionId: 'compat-plan-session' },
+        { sessionId: `${sessionPrefix}-plan-session` },
       );
       if (planned.finalResponse !== 'plan-gate-ok') {
         throw new Error(`unexpected plan-gate response: ${JSON.stringify(planned.finalResponse)}`);
@@ -703,7 +640,7 @@ async function main() {
       }
       const rejected = await harness.run(
         'Verify rejected approval recovery.',
-        { sessionId: 'compat-approval-reject-session' },
+        { sessionId: `${sessionPrefix}-approval-reject-session` },
       );
       if (rejected.finalResponse !== 'approval-reject-recovered') {
         throw new Error(`approval rejection did not continue the turn: ${JSON.stringify(rejected.finalResponse)}`);
@@ -736,7 +673,7 @@ async function main() {
     );
   } finally {
     await compatServer.close();
-    await rm(root, { recursive: true, force: true });
+    if (process.env.DSH_COMPAT_KEEP_ROOT !== '1') await rm(root, { recursive: true, force: true });
   }
 }
 

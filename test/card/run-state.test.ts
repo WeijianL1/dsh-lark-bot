@@ -49,6 +49,17 @@ describe('run state reducer', () => {
     expect(state.footer).toBeNull();
   });
 
+  it('replaces previous answer text with an authoritative final snapshot and keeps tools', () => {
+    let state = reduce(initialState, { type: 'text', delta: 'First. ' });
+    state = reduce(state, { type: 'tool_use', id: 't1', name: 'read', input: {} });
+    state = reduce(state, { type: 'text', delta: 'Wrong' });
+    state = reduce(state, { type: 'final_text', content: 'First. Correct.' });
+    expect(state.blocks.filter(block => block.kind === 'text')).toEqual([
+      { kind: 'text', content: 'First. Correct.', streaming: false },
+    ]);
+    expect(state.blocks.filter(block => block.kind === 'tool')).toHaveLength(1);
+  });
+
   it('renders committed final text even when no streaming deltas were emitted', () => {
     const state = reduce(initialState, {
       type: 'final_text',

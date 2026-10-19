@@ -245,6 +245,7 @@ export class NotifyServer {
         }
         if (payload.policyCheckOnly) {
           const result: ApprovalResult = await this.deps.approval(payload);
+          if (result.ok && result.managed === false) { respond(200, { ok: true, managed: false }); return; }
           if (!result.ok || !isPermissionPolicy(result.policy)) {
             respond(404, {
               ok: false,

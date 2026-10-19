@@ -20,6 +20,11 @@
 
 ## 产品简介
 
+此 fork 的 DSH 0.2 适配、最终回答覆盖语义及手动验证边界见
+[升级说明](docs/UPGRADE_DSH_020.md)。
+正式 profile 的默认模型保存还要求 ConfigEditor 与启动器共用 app-boot 实例；
+升级说明包含模块身份检查及带正式依赖结构的重启验证。
+
 让 DeepSeek Harness 成为你飞书里的一员，在手机、群聊、话题里直接指挥本机 coding agent。
 走飞书 WebSocket 长连接，**不需要公网 IP、域名、服务器或内网穿透**；Linux / macOS / Windows 通用，Node.js ≥ 22。
 
@@ -44,6 +49,10 @@ dsh --profile dsh-lark                              # ② 启动
 ---
 
 ## 核心能力
+
+此 fork 的 DSH 0.2 飞书 `/model` 和 `/config` 从运行中的 Host 读取模型目录，
+包含 Codex OAuth 模型；默认模型通过原生配置服务保存。兼容边界见
+[升级说明](docs/UPGRADE_DSH_020.md)。
 
 **全网独家**
 
@@ -113,7 +122,7 @@ dsh --profile dsh-lark                              # ② 启动
 
 ## 兼容性
 
-- **DeepSeek Harness（`dsh`）**：已验证 **0.1.0-rc.8**（2026-08-25），经官方 `@deepseek-ai/dsh-sdk-client` / `dsh-acp` 接入；锁定版本与升级政策见 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)。
+- **DeepSeek Harness（`dsh`）**：已验证 **0.2.0-rc.2**（2026-10-08），经官方 `@deepseek-ai/dsh-sdk-client` / `dsh-acp` 接入；锁定版本与升级政策见 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md)。
 - **运行时**：Node.js ≥ 22.19；**平台**：Linux / macOS / Windows。adapter 默认 `sdk`（原生续跑 / 流式 / 图片块），可切 `acp` / `headless` / `web`。
 
 ## 配置说明

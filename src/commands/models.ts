@@ -59,6 +59,8 @@ function formatModel(model: { id: string; name: string | undefined }): string {
 }
 
 function credentialLabel(provider: DshProviderSummary): string {
+  if (provider.catalogUnavailable) return '模型目录暂不可用';
+  if (!provider.managed) return '由 DSH 插件管理认证';
   if (provider.credentialReady) return '凭据就绪';
   return provider.credentialRef === undefined ? '未配置凭据' : '凭据缺失';
 }
@@ -111,7 +113,9 @@ export async function handleModel(args: string, ctx: CommandContext): Promise<vo
     const dshDefault = await ctx.dshConfig.defaultModelSelection();
     const providers = await ctx.dshConfig.listProviders();
     const modelLines = providers.flatMap((provider) =>
-      provider.models.map((model) => `- ${formatModel(model)} ← ${provider.id}`),
+      provider.catalogUnavailable
+        ? [`- ${provider.id}: 模型目录暂不可用 / model catalog temporarily unavailable`]
+        : provider.models.map((model) => `- ${formatModel(model)} ← ${provider.id}`),
     );
     await reply(
       ctx,
@@ -231,7 +235,7 @@ export async function handleProviders(_args: string, ctx: CommandContext): Promi
       '**Configured dsh providers**',
       '',
       ...providers.flatMap((provider) => [
-        `- **${provider.id}** (${provider.displayName}) — ${provider.configured ? 'configured' : 'not configured'} · ${provider.credentialReady ? 'credential ready' : provider.credentialRef === undefined ? 'credential not configured' : 'credential missing'}`,
+        `- **${provider.id}** (${provider.displayName}) — ${provider.configured ? 'configured' : 'not configured'} · ${!provider.managed ? 'authentication managed by DSH plugin' : provider.credentialReady ? 'credential ready' : provider.credentialRef === undefined ? 'credential not configured' : 'credential missing'}`,
         `  models: ${provider.models.length > 0 ? provider.models.map((model) => model.id).join(', ') : '(none)'}`,
       ]),
       '',

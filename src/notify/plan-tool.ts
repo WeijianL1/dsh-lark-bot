@@ -57,9 +57,11 @@ export function apply(ctx: Context, config: Config = {}) {
   });
   policyCtx.on('tools/pre-execute', async (execution, next) => {
     const policyDecision = await checkPermissionPolicy(config, execution);
+    if (policyDecision?.unmanaged) return next();
     if (policyDecision?.denial) {
       return { kind: 'deny', reason: policyDenialText(policyDecision.denial) };
     }
+    if (policyDecision && execution.name === 'ask_user_question') return { kind: 'deny', reason: 'This is a Feishu session. Use lark_ask_user; ask_user_question can only collect Web UI answers.' };
     if (gateDisabled) return next();
     if (!isHighRiskTool(policyCtx, execution)) return next();
     const agent = execution.agent;
@@ -74,6 +76,7 @@ export function apply(ctx: Context, config: Config = {}) {
     };
   });
 
+  if (gateDisabled) return;
   policyCtx.tools.register({
     name: 'lark_request_plan_approval',
     description:
@@ -165,7 +168,7 @@ export function apply(ctx: Context, config: Config = {}) {
 async function checkPermissionPolicy(
   config: Config,
   execution: PlanPolicyExecution,
-): Promise<{ policy: 'ask' | 'allow' | 'deny'; denial?: PolicyDenial } | undefined> {
+): Promise<{ policy?: 'ask' | 'allow' | 'deny'; unmanaged?: boolean; denial?: PolicyDenial } | undefined> {
   const endpoint = config.policyEndpoint ?? process.env.DSH_LARK_APPROVAL_URL;
   const token = config.token ?? process.env.DSH_LARK_NOTIFY_TOKEN;
   const sessionId = (execution.agent as { session?: { id?: unknown } } | undefined)?.session?.id;
@@ -173,6 +176,7 @@ async function checkPermissionPolicy(
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
+      signal: AbortSignal.timeout(5_000),
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         token,
@@ -181,7 +185,8 @@ async function checkPermissionPolicy(
         policyCheckOnly: true,
       }),
     });
-    const body = await response.json() as { ok?: boolean; policy?: unknown; denial?: unknown };
+    const body = await response.json() as { ok?: boolean; managed?: boolean; policy?: unknown; denial?: unknown };
+    if (response.ok && body.ok === true && body.managed === false) return { unmanaged: true };
     if (!response.ok || body.ok !== true || !isPermissionPolicy(body.policy)) {
       return { policy: 'deny', denial: unavailablePolicyDenial(execution.name) };
     }

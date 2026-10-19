@@ -141,7 +141,7 @@ describe('lark approval answerer', () => {
       reason: expect.stringContaining('[policy-denial layer=permission-policy]'),
     });
     expect(next).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('allows exactly the approved execution and reuses it for a nested official request', async () => {
@@ -166,8 +166,8 @@ describe('lark approval answerer', () => {
       async () => approval?.({ agent, toolName: 'edit_file', callId: 'call-1' }, async () => 'unavailable'),
     );
     expect(result).toBe('allowed-once');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toMatchObject({
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit).body))).toMatchObject({
       sessionId: 's', toolName: 'edit_file', toolInput: { path: 'a.ts' },
     });
   });

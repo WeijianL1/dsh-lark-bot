@@ -7,14 +7,14 @@
 
 ## 1. 兼容矩阵
 
-> 最后验证：2026-08-25（临时 DSH_HOME 安装 + SDK / ACP initialize；ACP task/permission；SDK notify/ask/plan/approval、live session 续接与 restart collision；rc.7 SQLite fail-closed 实测）。
+> 最后验证：2026-10-08（隔离 DSH_HOME；原生 Web/Host 流式回答、用量、续接和历史；SDK/ACP 任务、提问、审批和 SDK 显式重启冲突）。旧 SQLite 驱动已从 DSH 0.2 移除，本矩阵使用 JSONL。历史数据转换另见 [升级说明](UPGRADE_DSH_020.md)。
 
 | 组件 | 锁定版本 | 说明 |
 | :--- | :--- | :--- |
-| DeepSeek Harness CLI（`dsh`） | `0.1.0-rc.8` | SDK / ACP runtime initialize 握手实测通过 |
-| `@deepseek-ai/dsh-sdk-client` | `0.1.0-rc.8` | `package.json` 精确锁定（`dependencies`） |
-| `@deepseek-ai/dsh-sdk-jsonrpc-server` | `0.1.0-rc.8` | SDK runtime profile 安装版本（`dsh-compat.ts`） |
-| `@deepseek-ai/dsh-acp` | `0.1.0-rc.8` | ACP runtime profile 安装版本（`dsh-compat.ts`） |
+| DeepSeek Harness CLI（`dsh`） | `0.2.0-rc.2` | SDK / ACP runtime initialize 握手实测通过 |
+| `@deepseek-ai/dsh-sdk-client` | `0.2.0-rc.2` | `package.json` 精确锁定（`dependencies`） |
+| `@deepseek-ai/dsh-sdk-jsonrpc-server` | `0.2.0-rc.2` | SDK runtime profile 安装版本（`dsh-compat.ts`） |
+| `@deepseek-ai/dsh-acp` | `0.2.0-rc.2` | ACP runtime profile 安装版本（`dsh-compat.ts`） |
 | Node.js | `>=22.19.0` | `engines` 与 `dsh-compat.ts` 一致 |
 
 版本约束规则：
@@ -41,7 +41,7 @@ DeepSeek Harness 处于 developer preview（0.1.0-rc 系列），接口频繁破
 
 ## 3. 升级操作手册（Upgrade Runbook）
 
-以从当前 `0.1.0-rc.8` 升级到 `X.Y.Z` 为例：
+以从当前 `0.2.0-rc.2` 升级到 `X.Y.Z` 为例：
 
 1. **确认上游**：`pnpm upstream:report`（或每日 CI `upstream-release-watch` 任务）合并检查
    GitHub Releases 与 npm 全版本/time/dist-tags；阅读自动创建的 `upstream-update` Issue，再人工判断

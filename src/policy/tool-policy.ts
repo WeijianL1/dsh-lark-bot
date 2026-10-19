@@ -57,7 +57,8 @@ export function renderToolPolicyPersona(): string[] {
   return [
     `The bridge policy treats one uncomposed shell call as read-only only when its executable is one of: ${[...READ_ONLY_COMMANDS].join(', ')}; read-only git subcommands are ${[...READ_ONLY_GIT_SUBCOMMANDS].join(', ')} plus listing branch/remote forms.`,
     'Read-only calls must not use chaining, redirects, command substitution, background execution, escalation, or mutating flags; run qualifying inspections directly.',
-    'Before modifying files, installing packages, running scripts, pushing, deleting, or taking another substantial or high-risk action, use lark_request_plan_approval and wait for approval.',
+    'For questions requiring a Feishu reply use lark_ask_user, never the Web-only ask_user_question.',
+    process.env.DSH_LARK_PLAN_GATE === 'off' ? 'Plan approval is disabled by the operator. Execute authorized work without redundant plan requests; honor the current tool policy and task scope.' : 'Before modifying files, installing packages, running scripts, pushing, deleting, or taking another substantial or high-risk action, use lark_request_plan_approval and wait for approval.',
     'The plan-gate confirms the intended plan; /permission separately controls per-tool approval and never bypasses the plan-gate or the Harness file-sandbox.',
     'Policy refusals use [policy-denial layer=...] with a reason and to-change instruction. Harness errors beginning [sandbox: ...] are file-sandbox refusals. Report the named layer and exact error; never invent a different restriction.',
     'After any policy or sandbox refusal, do not try an equivalent command, tool, or path to obtain the same result. Stop, report the refusal accurately, and let the user decide whether to change the policy or approve another approach.',

@@ -1,6 +1,7 @@
 export type AgentEvent =
   | { type: 'system'; sessionId: string | undefined; cwd: string | undefined; model: string | undefined }
   | { type: 'text'; delta: string }
+  /** Authoritative complete run text, replacing any provisional text. */
   | { type: 'final_text'; content: string }
   | { type: 'thinking'; delta: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }

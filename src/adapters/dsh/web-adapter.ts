@@ -12,8 +12,8 @@ import { translateSessionEvent } from './sdk-translate.js';
 export interface WebAdapterOptions {
   /** Base URL of the local dsh web agent (default http://127.0.0.1:3080). */
   baseUrl?: string;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
 }
 
 function waitWithTimeout(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
@@ -68,6 +68,18 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
   let hadError = false;
   let ws: WebSocket | undefined;
   let finished = false;
+  let activeSessionId: string | undefined;
+  let promptSubmitted = false;
+  let cancellation: Promise<void> | undefined;
+  const cancelNativeSession = (): Promise<void> => {
+    if (!activeSessionId || !promptSubmitted) return Promise.resolve();
+    return cancellation ??= adapter.rpc<{ result?: { ok?: boolean } }>('session.cancel', { sessionId: activeSessionId }).then((response) => {
+      if (!response.result?.ok) throw new Error('Native cancellation was not accepted');
+    }).catch((error: unknown) => {
+      hadError = true;
+      channel.push({ type: 'error', message: `Native session cancellation failed: ${String(error)}`, terminationReason: 'failed' });
+    });
+  };
 
   const finish = (): void => {
     if (finished) return;
@@ -95,7 +107,9 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
       if (sessionId === undefined) {
         throw new Error('web session id unresolved');
       }
+      activeSessionId = sessionId;
       sessionReady.resolve({ sessionId, cwd: options.cwd, model: options.model });
+      if (stopRequested.value) return;
 
       // Open the mux event stream (the web server broadcasts every session's
       // events to every connection; filter by our session id).
@@ -134,6 +148,7 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
       ws.addEventListener('close', () => finish(), { once: true });
 
       // Send the user message; the web agent already holds the full history.
+      if (stopRequested.value) return;
       const promptRpcId = randomUUID();
       await adapter.recordPromptCorrelation(sessionId, promptRpcId, options.origin);
       const promptResult = (await adapter.rpc('session.prompt', {
@@ -144,6 +159,9 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
       if (!promptResult?.result?.ok) {
         throw new Error(promptResult?.result?.error?.message ?? 'web session.prompt failed');
       }
+
+      promptSubmitted = true;
+      if (stopRequested.value) await cancelNativeSession();
 
       // Wait for the turn to finish (or for stop).
       await new Promise<void>((resolve) => {
@@ -172,6 +190,7 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
         });
       }
     } finally {
+      if (stopRequested.value) await cancelNativeSession();
       finish();
       try {
         ws?.close();
@@ -200,7 +219,9 @@ function createWebRun(adapter: WebDshAdapter, options: WebRunOptions): WebRunHan
     events: events(),
     settled: task.then(() => undefined),
     stop: (): void => {
+      if (finished) return;
       stopRequested.value = true;
+      void cancelNativeSession();
       finish();
       try {
         ws?.close();
@@ -231,7 +252,7 @@ export class WebDshAdapter implements AgentAdapter {
   readonly resumeCapable = true;
 
   private readonly baseUrl: string;
-  private readonly model: string;
+  private readonly model: string | undefined;
   private readonly sockets = new Set<WebSocket>();
   private disposed = false;
   private promptObserver: ((input: {
@@ -240,7 +261,7 @@ export class WebDshAdapter implements AgentAdapter {
     origin: NonNullable<AgentRunOptions['origin']>;
   }) => Promise<void>) | undefined;
 
-  constructor(options: WebAdapterOptions) {
+  constructor(options: WebAdapterOptions = {}) {
     this.baseUrl = (options.baseUrl ?? 'http://127.0.0.1:3080').replace(/\/+$/, '');
     this.model = options.model;
   }

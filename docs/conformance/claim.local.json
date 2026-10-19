@@ -1,13 +1,13 @@
 {
   "claimVersion": "0.15",
-  "subject": "io.github.plutokeating.dsh-lark-bot@0.19.16",
+  "subject": "io.github.plutokeating.dsh-lark-bot@0.19.17-fork.3",
   "specVersion": "community-v0.15",
   "hostDescriptorDigest": "sha256:b440a6f6548c56d9b7e07627ddd3c5324fbdba5efca646eb010435d523d6b4a1",
-  "artifactDigest": "sha256:311567ee7137c8b96b21b997a42354d4cf93dcb9f91c1d672da0bb56fed492cf",
-  "suiteVersion": "dsh-lark-bot-ci-local/0.19.16",
+  "artifactDigest": "sha256:eb03a8d3657827dadbd3a5bfe782003381582b610993f6ff9ede034bf233e421",
+  "suiteVersion": "dsh-lark-bot-ci-local/0.19.17-fork.3",
   "evidenceLevel": "Tested",
   "result": "pass",
-  "testedAt": "2026-09-07T22:17:33.033690Z",
+  "testedAt": "2026-10-19T04:32:46.516740+00:00",
   "runtime": "node-24/linux-x64/local-profile-fixture",
   "revoked": false,
   "failedRequirements": []

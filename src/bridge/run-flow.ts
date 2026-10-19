@@ -497,12 +497,12 @@ async function runAttempt(
             }
             if (event.type === 'final_text') {
               assistantOutput = event.content;
-              // `final_text` is the complete answer for its segment and subsumes
-              // any deltas already buffered. Drop the buffer (it is delivered
-              // once via the final remaining tail) rather than emit a duplicate
-              // bubble for it.
+              // Keep the canonical unsent tail ahead of any later step. A
+              // rewritten, already-sent interim bubble remains visible, but
+              // no longer counts toward delivery of the corrected answer.
               clearInterimTimer();
-              interim.buffered = '';
+              if (!event.content.startsWith(interim.delivered)) interim.delivered = '';
+              interim.buffered = event.content.slice(interim.delivered.length);
             } else if (event.type === 'text') {
               assistantOutput += event.delta;
               interim.buffered += event.delta;
@@ -658,14 +658,14 @@ async function runAttempt(
           await safeUpdate();
           await checkpoint('finalizing');
           // The final answer is only the tail not already delivered as an
-          // interim bubble; `delivered` is always a prefix of the accumulated
-          // output, so this never duplicates the interim bubbles (issue #95).
+          // interim bubble. If settlement rewrote a delivered prefix, send the
+          // authoritative answer in full instead of silently dropping it.
           const delivered = interim.delivered;
           const remaining = delivered === ''
             ? assistantOutput
             : assistantOutput.startsWith(delivered)
               ? assistantOutput.slice(delivered.length)
-              : '';
+              : assistantOutput;
           if (state.terminal === 'done' && remaining.trim() !== '') {
             try {
               await (input.deliverFinalReply

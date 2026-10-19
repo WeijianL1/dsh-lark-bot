@@ -1,7 +1,9 @@
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ConfigForm as SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client';
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 export const SETTINGS_NAMESPACE = 'dsh-lark-bot';
@@ -128,14 +130,14 @@ export async function saveSettingsDraft(
     if (field.secret && normalized[field.key] === undefined) continue;
     const next = normalized[field.key];
     if (next === undefined) {
-      if (field.key in user) await scope.unset(field.key);
+      if (field.key in user && await scope.unset(field.key) === false) throw new Error('Host rejected setting reset');
     } else if (field.secret || current[field.key] !== next) {
-      await scope.set(field.key, next);
+      if (await scope.set(field.key, next) === false) throw new Error('Host rejected setting update');
     }
   }
 }
 
-function SettingsCard({ scope }: { scope: SettingsScope<BrowserSettings> }) {
+function SettingsCard({ scope }: PropsRuntime<'settings.plugins.tab'> & { scope: SettingsScope<BrowserSettings> }) {
   const snapshot = useSyncExternalStore(scope.subscribe, scope.getSnapshot);
   const [draft, setDraft] = useState<SettingsDraft>(() => draftFrom(snapshot.value));
   const [message, setMessage] = useState('');
@@ -287,13 +289,14 @@ const styles = {
 } as const;
 
 /** dsh browser-half entry: register one card under the matching Host namespace. */
-export const inject = ['slots', 'settingsScope'];
+export const inject = ['slots', 'configForms'];
 
 export function apply(ctx: ClientContext): void {
-  const scope = ctx.settingsScope.bind<BrowserSettings>({ namespace: SETTINGS_NAMESPACE });
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: SETTINGS_NAMESPACE,
+  const scope = ctx.configForms.get<BrowserSettings>(SETTINGS_NAMESPACE);
+  ctx.configForms.whileServed([SETTINGS_NAMESPACE], () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: SETTINGS_NAMESPACE,
+    label: 'Lark Bot',
     inject: () => ({ scope }),
   }, SettingsCard));
 }

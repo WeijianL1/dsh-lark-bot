@@ -29,7 +29,7 @@ const CORRUPT_ANCHORED =
 
 /** Classify a session error into a heal kind, or `undefined` when unrelated. */
 export function classifySessionError(message: string): SessionHealKind | undefined {
-  if (BROKEN_ANCHORED.test(message)) return 'broken';
+  if (BROKEN_ANCHORED.test(message) || /^session ["'`]?[A-Za-z0-9_-]+["'`]? already exists$/i.test(message)) return 'broken';
   if (CORRUPT_ANCHORED.test(message)) return 'corrupt';
   return undefined;
 }

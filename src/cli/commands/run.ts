@@ -56,7 +56,7 @@ import { resolveAppPaths } from '../../config/app-paths.js';
 import { AccessManager } from '../../config/access-manager.js';
 import { loadRuntimeEnv } from '../../config/env.js';
 import { ConfigStore } from '../../config/profile-store.js';
-import { DEEPSEEK_PROVIDER, DshProviderManager } from '../../config/dsh-config.js';
+import { DEEPSEEK_PROVIDER, DshProviderManager, type DshRuntimeModelConfig } from '../../config/dsh-config.js';
 import { log } from '../../core/logger.js';
 import { onboardPersonalAgent } from '../../onboard/registration.js';
 import { prepareAttachments } from '../../media/attachments.js';
@@ -132,6 +132,7 @@ export interface BridgeEngineSafeSettings {
 }
 
 export interface BridgeEngineOptions {
+  runtimeModels?: DshRuntimeModelConfig;
   feedbackGenerate?: FeedbackGenerate;
   env: RuntimeEnv;
   profileName: string;
@@ -349,7 +350,8 @@ export async function startBridgeEngine(
   const runCardAnchors = new RunCardAnchors();
   const models = new ModelStore();
   const wizardStore = new WizardStore();
-  const dshConfig = new DshProviderManager({ env: process.env });
+  const dshConfig = new DshProviderManager({ env: process.env,
+    ...(options.runtimeModels ? { runtime: options.runtimeModels } : {}) });
   const secretRequests = new SecretRequestRegistry(new SecretTargetManager({
     dsh: dshConfig, profiles: configStore, profileName,
   }));
@@ -621,7 +623,7 @@ export async function startBridgeEngine(
           (dshDefault ? `${dshDefault.provider}/${dshDefault.model}` : undefined) ??
           defaultModel;
         let modelRoute: Awaited<ReturnType<DshProviderManager['resolveRuntimeModelRoute']>>;
-        if (resolvedModel) {
+        if (resolvedModel && adapter.id !== 'dsh-web') {
           try {
             modelRoute = await dshConfig.resolveRuntimeModelRoute(resolvedModel);
           } catch (error) {
@@ -638,7 +640,7 @@ export async function startBridgeEngine(
             return;
           }
         }
-        if (resolvedModel && !modelRoute) {
+        if (resolvedModel && adapter.id !== 'dsh-web' && !modelRoute) {
           // Surface a clear configuration error instead of letting the dsh
           // runtime fail with an opaque provider/model mismatch.
           await streaming.sendMarkdown(
@@ -703,7 +705,7 @@ export async function startBridgeEngine(
             scope,
             bridgeProfile: profileName,
             adapter: adapter.id,
-            tools: ['lark_read_chat_history', 'lark_download_attachment', 'lark_notify', 'lark_send_file', 'lark_ask_user', 'lark_request_plan_approval', 'lark_request_secret'],
+            tools: ['lark_read_chat_history', 'lark_download_attachment', 'lark_notify', 'lark_send_file', 'lark_ask_user', ...(process.env.DSH_LARK_PLAN_GATE === 'off' ? [] : ['lark_request_plan_approval']), 'lark_request_secret'],
             language: languagePolicies.get(),
             secretCollection: 'available',
           },

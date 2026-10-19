@@ -38,16 +38,23 @@ function textOfBlocks(blocks: unknown): string {
 interface ToolDeltaTracker {
   emitted: Set<string>;
   usageSamples?: Set<string>;
+  messageSamples?: Set<string>;
+  streamedText?: string;
+  streamedThinking?: string;
+  /** Settled text per turn/step; retries replace their own segment. */
+  textSegments?: Map<string, string>;
 }
 
 function translateChunk(chunk: unknown, tracker: ToolDeltaTracker): AgentEvent[] {
   if (!isRecord(chunk)) return [];
   switch (chunk.type) {
     case 'reasoning-delta':
+      if (typeof chunk.text === 'string') tracker.streamedThinking = (tracker.streamedThinking ?? '') + chunk.text;
       return typeof chunk.text === 'string' && chunk.text
         ? [{ type: 'thinking', delta: chunk.text }]
         : [];
     case 'text-delta':
+      if (typeof chunk.text === 'string') tracker.streamedText = (tracker.streamedText ?? '') + chunk.text;
       return typeof chunk.text === 'string' && chunk.text
         ? [{ type: 'text', delta: chunk.text }]
         : [];
@@ -74,12 +81,12 @@ function translateToolResult(data: unknown): AgentEvent[] {
   const message = isRecord(data.message) ? data.message : undefined;
   const block = Array.isArray(message?.content) ? message.content[0] : undefined;
   const toolCallId = stringValue(
-    isRecord(block) ? block.toolCallId : undefined,
+    message?.toolCallId ?? (isRecord(block) ? block.toolCallId : undefined),
   );
   if (!toolCallId) return [];
-  const output = textOfBlocks(isRecord(block) ? block.content : undefined);
+  const output = textOfBlocks(message?.toolCallId ? message.content : isRecord(block) ? block.content : undefined);
   const isError =
-    data.error !== undefined || (isRecord(block) ? block.isError === true : false);
+    data.error !== undefined || message?.isError === true || (isRecord(block) ? block.isError === true : false);
   return [
     {
       type: 'tool_result',
@@ -88,6 +95,46 @@ function translateToolResult(data: unknown): AgentEvent[] {
       isError,
     },
   ];
+}
+
+function translateCommittedContent(data: unknown, tracker: ToolDeltaTracker, seq: unknown): AgentEvent[] {
+  if (!isRecord(data)) return [];
+  const message = isRecord(data.message) ? data.message : undefined;
+  const blocks = Array.isArray(message?.content) ? message.content.filter(isRecord) : [];
+  if (!message && !Array.isArray(data.stream)) return [];
+  const key = typeof seq === 'number' ? `seq:${seq}` : typeof data.turn === 'number' && typeof data.step === 'number' ? `step:${data.turn}:${data.step}` : undefined;
+  if (key && (tracker.messageSamples ??= new Set()).has(key)) return [];
+  if (key) tracker.messageSamples!.add(key);
+  const events: AgentEvent[] = [];
+  for (const [type, streamed] of [['text', tracker.streamedText], ['reasoning', tracker.streamedThinking]] as const) {
+    let full = blocks.filter(block => block.type === type && typeof block.text === 'string').map(block => block.text).join('');
+    if (!message && Array.isArray(data.stream)) full = data.stream.filter(isRecord).map(record => {
+      if (record.type === `${type}-chunks` && Array.isArray(record.texts)) return record.texts.join('');
+      if (record.type === 'chunk' && isRecord(record.chunk) && record.chunk.type === `${type}-delta`) return record.chunk.text ?? '';
+      return '';
+    }).join('');
+    if (type === 'text') {
+      const segments = tracker.textSegments ??= new Map<string, string>();
+      const segmentKey = typeof data.turn === 'number' && typeof data.step === 'number'
+        ? `step:${data.turn}:${data.step}` : key ?? `message:${segments.size}`;
+      const previous = segments.get(segmentKey);
+      segments.set(segmentKey, full);
+      if ((previous !== undefined && (previous !== full || !!streamed)) ||
+          (streamed && !full.startsWith(streamed))) {
+        // final_text replaces the entire accumulated answer, not just this
+        // message. Keep earlier steps while removing provisional/retried text.
+        events.push({ type: 'final_text', content: [...segments.values()].join('') });
+      } else if (previous === undefined) {
+        const delta = full.slice(streamed?.length ?? 0);
+        if (delta) events.push({ type: 'text', delta });
+      }
+      continue;
+    }
+    const delta = streamed && full.startsWith(streamed) ? full.slice(streamed.length) : streamed ? '' : full;
+    if (delta) events.push({ type: 'thinking', delta });
+  }
+  tracker.streamedText = ''; tracker.streamedThinking = '';
+  return events;
 }
 
 function translateAssistantMessage(data: unknown): AgentEvent[] {
@@ -154,21 +201,24 @@ export function translateSessionEvent(
     }
     case 'tool/result':
       return translateToolResult(event.data);
+    case 'assistant/attempt':
+      return translateCommittedContent(event.data, tracker, event.seq);
     case 'assistant/message': {
       // Only committed messages carry per-call usage. Streaming chunks are not
       // samples. Retransmission must not inflate card or workspace totals.
+      const content = translateCommittedContent(event.data, tracker, event.seq);
       const events = translateAssistantMessage(event.data);
-      if (events.length === 0) return events;
+      if (events.length === 0) return content;
       const data = isRecord(event.data) ? event.data : undefined;
       const key = typeof data?.turn === 'number' && typeof data.step === 'number'
         ? `step:${data.turn}:${data.step}`
         : typeof event.seq === 'number' ? `seq:${event.seq}` : undefined;
       if (key !== undefined) {
         const seen = tracker.usageSamples ??= new Set<string>();
-        if (seen.has(key)) return [];
+        if (seen.has(key)) return content;
         seen.add(key);
       }
-      return events;
+      return [...content, ...events];
     }
     case 'turn/end':
       return translateTurnEnd(event.data);

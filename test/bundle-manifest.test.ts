@@ -24,7 +24,7 @@ describe('dsh bundle manifest', () => {
     // Tool plugins register raw JSON-Schema definitions against the host
     // registry; a direct dsh-tools dependency can create a second Symbol realm.
     expect(pkg.dependencies?.['@deepseek-ai/dsh-tools']).toBeUndefined();
-    expect(pkg.dependencies?.['@deepseek-ai/dsh-skill']).toBe('0.1.0-rc.8');
+    expect(pkg.dependencies?.['@deepseek-ai/dsh-skill']).toBe('0.2.0-rc.2');
   });
 
   it('ships a bundle patch whose row references the plugin entry', async () => {

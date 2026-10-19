@@ -2,11 +2,21 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { SessionController } from '@deepseek-ai/dsh-api-session-controller';
 import type { SessionId } from '@deepseek-ai/dsh-session';
 import { WebDshAdapter, type WebAdapterOptions } from './web-adapter.js';
+import type { DshRuntimeModelConfig } from '../../config/dsh-config.js';
 
 /** Use the loaded Host's public Session service: one writer, no browser auth bypass. */
 export class HostDshAdapter extends WebDshAdapter {
   private readonly controller: SessionController;
   private readonly streams = new Set<WebSocket>();
+
+  readonly runtimeModels: DshRuntimeModelConfig = {
+    modelCatalog: () => this.controller.modelCatalog(),
+    saveDefault: async (selection) => {
+      const defaults = this.host.get('agentDefaultModel');
+      if (!defaults) throw new Error('DSH default model service is unavailable');
+      await defaults.saveSelection(selection);
+    },
+  };
 
   constructor(private readonly host: Context, options: WebAdapterOptions = {}) {
     super(options);

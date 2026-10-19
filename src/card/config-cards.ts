@@ -124,7 +124,11 @@ export function renderConfigHubCard(input: ConfigHubInput): object {
     const models = provider.models.length > 0
       ? provider.models.map((model) => `\`${model.id}\``).join(' ')
       : zh ? '（无）' : '(none)';
-    const credential = provider.credentialReady
+    const credential = provider.catalogUnavailable
+      ? zh ? '⚠️模型目录暂不可用' : '⚠️model catalog unavailable'
+      : !provider.managed
+      ? zh ? '🔌插件管理认证' : '🔌plugin-managed auth'
+      : provider.credentialReady
       ? '✅'
       : provider.credentialRef === undefined
         ? zh ? '🔑未配置' : '🔑not configured'

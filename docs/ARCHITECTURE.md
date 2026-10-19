@@ -4,6 +4,10 @@
 文本；`final_text` 覆盖整轮回答、保留工具记录。旧代际实现说明以
 [DSH 0.2 升级说明](UPGRADE_DSH_020.md) 的兼容边界为准。
 
+原生 Host 通过 `BridgeEngineOptions.runtimeModels` 注入模型目录和默认模型保存端口。
+`DshProviderManager` 在此路径使用运行时注册表，包含 OAuth 插件，且不读取旧配置
+或 models.dev；独立 SDK/ACP 路径保留既有配置读取逻辑。
+
 > 本文件描述 dsh-lark-bot 的总体架构与分层设计，仍在演进中。
 > This document describes the overall architecture and layering of dsh-lark-bot. Still evolving.
 

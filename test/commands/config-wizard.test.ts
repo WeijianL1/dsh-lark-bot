@@ -240,6 +240,28 @@ describe('config wizard', () => {
     });
   });
 
+  it('shows native OAuth models and plugin-managed authentication in the hub', async () => {
+    await withContext(async (ctx, root, channel) => {
+      ctx.dshConfig = new DshProviderManager({ home: root, env: {}, runtime: {
+        modelCatalog: async () => ({ default: { provider: 'openai-codex', model: 'gpt-native' },
+          routableProviders: ['openai-codex'], failures: [{ id: 'offline', name: 'Offline', message: 'Private diagnostic' }],
+          groups: [{ id: 'openai-codex', name: 'Codex', models: [{ id: 'gpt-native', name: 'GPT Native' }] }] }),
+        saveDefault: async () => {},
+      } });
+      await handleConfigHubAction('refresh', ctx);
+      const card = JSON.stringify(lastCard(channel));
+      expect(card).toContain('gpt-native');
+      expect(card).toContain('插件管理认证');
+      expect(card).toContain('模型目录暂不可用');
+      expect(card).not.toContain('🔑未配置');
+      expect(card).not.toContain('Private diagnostic');
+      await beginWizard(ctx, 'model-use');
+      await handleWizardCardAction(choose(lastCard(channel), 0), undefined, ctx);
+      expect(ctx.models.get('chat-a')).toBe('openai-codex/gpt-native');
+      await expect(readFile(join(root, '.dsh', 'settings.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
   it('model-default also persists the profile preference for new sessions', async () => {
     await withContext(async (ctx, _root, channel) => {
       const preferenceSaved: string[] = [];

@@ -1,6 +1,6 @@
 # Fork upgrade to DSH 0.2
 
-This fork targets DSH `0.2.0-rc.2`, Lark `0.19.17-fork.2`, Codex Connect
+This fork targets DSH `0.2.0-rc.2`, Lark `0.19.17-fork.3`, Codex Connect
 `0.2.0-alpha.2`, and Mnemon `0.5.24`. The fork baseline is Lark origin/main
 `d91dfa2`; the upstream Lark baseline remains `6e722e0` (`0.19.16`).
 
@@ -30,6 +30,16 @@ commands and flags fail explicitly. ACP handles asynchronous provider
 registration. DSH 0.2 profiles own their provider configuration: legacy
 `settings.yaml` is imported into the first profile and retained as a backup;
 independent SDK/ACP profiles need their own provider rows.
+
+The native Feishu `/model`, `/providers` and `/config` selectors read the loaded
+Host's `sessionController.modelCatalog()`, including OAuth plugins such as
+Codex. They do not query models.dev or retired `settings.yaml`. Failed provider
+catalogs remain visible as unavailable, without exposing private diagnostic
+messages. Authentication is described as plugin-managed rather than missing
+an API key. `/model default` uses `agentDefaultModel.saveSelection()` so the
+owning profile saves its volatile configuration; it never recreates the legacy
+settings file. Native wizard values include the provider to distinguish duplicate
+model IDs. This catalog fix does not change the session override limitation below.
 
 The native Host has no hardcoded provider or model fallback and uses the current
 DSH session model selection. It does not call

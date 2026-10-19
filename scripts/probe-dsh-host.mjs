@@ -35,7 +35,10 @@ await build({ entryPoints: [resolve('src/adapters/dsh/host-adapter.ts')], outfil
   bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' });
 const feedback = join(root, 'feedback.mjs');
 const learning = join(root, 'learning.mjs');
+const modelConfig = join(root, 'model-config.mjs');
 await Promise.all([
+  build({ entryPoints: [resolve('src/config/dsh-config.ts')], outfile: modelConfig, bundle: true, format: 'esm', platform: 'node', target: 'node24',
+    banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } }),
   build({ entryPoints: [resolve('src/feedback/generate.ts')], outfile: feedback, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' }),
   build({ entryPoints: [resolve('src/learning/host.ts')], outfile: learning, bundle: true, packages: 'external', format: 'esm', platform: 'node', target: 'node24' }),
 ]);
@@ -60,6 +63,7 @@ await writeFile(probe, `
 import { HostDshAdapter } from ${JSON.stringify(pathToFileURL(adapter).href)};
 import { feedbackGenerator } from ${JSON.stringify(pathToFileURL(feedback).href)};
 import { attachConversationLearning } from ${JSON.stringify(pathToFileURL(learning).href)};
+import { DshProviderManager } from ${JSON.stringify(pathToFileURL(modelConfig).href)};
 export const name = 'native-host-compat-probe';
 export const inject = ['sessionController', 'sessionQuery', 'llm'];
 export function apply(ctx) {
@@ -107,6 +111,15 @@ export function apply(ctx) {
       try { await ctx.sessionController.selectModel({ sessionId, provider: 'compat-host', model: 'compat-model' }); break; }
       catch (error) { if (i >= 20) throw error; await new Promise(r => setTimeout(r, 250)); }
     }
+    const modelConfig = new DshProviderManager({ runtime: adapter.runtimeModels,
+      settingsFile: ${JSON.stringify(join(root, 'legacy-settings-must-not-exist.yaml'))},
+      catalog: { listProviders: async () => { throw new Error('Unexpected legacy catalog lookup'); } },
+    });
+    const providers = await modelConfig.listProviders();
+    if (!providers.some(provider => provider.id === 'compat-host' && provider.models.some(model => model.id === 'compat-model'))) throw new Error('Native picker omitted the registered provider');
+    await modelConfig.setDefaultModel('compat-host/compat-model');
+    const defaultModel = await modelConfig.defaultModelSelection();
+    if (defaultModel.provider !== 'compat-host' || defaultModel.model !== 'compat-model') throw new Error('Native default model was not saved');
     for (let i = 0; i < 2; i++) {
       const run = adapter.run({ runId: 'probe-' + i, prompt: 'Verify native host bridge', sessionId, cwd: ${JSON.stringify(workspace)} });
       let text = ''; let usage = 0;

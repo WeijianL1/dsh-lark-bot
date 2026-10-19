@@ -5,6 +5,12 @@ Renderers replace provisional answer text while retaining tool records; delivery
 sends the full corrected answer if previously delivered interim text diverges.
 See [DSH 0.2 compatibility](UPGRADE_DSH_020.md).
 
+`DshProviderManagerOptions.runtime` optionally supplies the loaded Host's
+`modelCatalog()` and `saveDefault(selection)` operations. When provided, model
+discovery and default selection use these operations exclusively. Provider rows
+are plugin-managed; `catalogUnavailable` distinguishes isolated catalog failures
+from an empty configuration. Unknown or ambiguous bare model IDs are rejected.
+
 > 本文记录 dsh-lark-bot 对内部模块和外部调用方暴露的稳定接口。当前处于 P3 演进阶段，接口可能随 dsh SDK/ACP 落版而调整。
 > This file records stable interfaces exposed by dsh-lark-bot. They are still evolving during P3 and may change when the dsh ACP/SDK integration is finalized.
 

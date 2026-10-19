@@ -6,6 +6,7 @@ function fixture() {
   const unsubscribe = vi.fn();
   const returned = vi.fn();
   const controller = {
+    modelCatalog: vi.fn().mockResolvedValue({ groups: [], default: { provider: 'fixture', model: 'default' } }),
     create: vi.fn().mockResolvedValue({ sessionId: 'session-1' }),
     prompt: vi.fn().mockResolvedValue({ accepted: true }),
     cancel: vi.fn().mockResolvedValue({ accepted: true }),
@@ -26,6 +27,13 @@ function fixture() {
 }
 
 describe('native Host session bridge', () => {
+  it('exposes the loaded model catalog without selecting a session model', async () => {
+    const { adapter, controller } = fixture();
+    expect(await adapter.runtimeModels.modelCatalog()).toEqual({ groups: [], default: { provider: 'fixture', model: 'default' } });
+    expect(controller.modelCatalog).toHaveBeenCalledOnce();
+    expect(controller.selectModel).not.toHaveBeenCalled();
+    await adapter.dispose();
+  });
   it('leaves model selection with the Host and does not invent a model label', async () => {
     const { adapter, controller, emit } = fixture();
     const run = adapter.run({ runId: 'host-default', prompt: 'hello', cwd: '/tmp',

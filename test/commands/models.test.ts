@@ -78,6 +78,22 @@ function lastReply(ctx: CommandContext): string {
 }
 
 describe('model slash commands', () => {
+  it('lists native GPT models and reports isolated catalog failures', async () => {
+    await withContext(async (ctx, root) => {
+      ctx.dshConfig = new DshProviderManager({ home: root, env: {}, runtime: {
+        modelCatalog: async () => ({ default: { provider: 'openai-codex', model: 'gpt-native' },
+          routableProviders: ['openai-codex'], groups: [{ id: 'openai-codex', name: 'Codex', models: [{ id: 'gpt-native', name: 'GPT Native' }] }],
+          failures: [{ id: 'offline', name: 'Offline', message: 'Private diagnostic' }] }),
+        saveDefault: async () => {},
+      } });
+      await handleModel('', ctx);
+      expect(lastReply(ctx)).toContain('gpt-native');
+      expect(lastReply(ctx)).toContain('offline: 模型目录暂不可用');
+      expect(lastReply(ctx)).not.toContain('Private diagnostic');
+      await handleProviders('', ctx);
+      expect(lastReply(ctx)).toContain('由 DSH 插件管理认证');
+    });
+  });
   it('/model use hot-switches the scope override and /model reset clears it', async () => {
     await withContext(async (ctx) => {
       await handleModel('use deepseek-v4-pro', ctx);

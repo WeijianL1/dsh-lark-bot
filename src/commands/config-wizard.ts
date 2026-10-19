@@ -127,7 +127,7 @@ async function modelOptions(ctx: ConfigWizardContext): Promise<WizardOption[]> {
   return providers.flatMap((provider) =>
     provider.models.map((model) => ({
       label: `${model.id}（${provider.id}）`,
-      value: model.id,
+      value: provider.managed ? model.id : `${provider.id}/${model.id}`,
     })),
   );
 }
@@ -889,8 +889,9 @@ export async function showConfigHub(ctx: ConfigWizardContext): Promise<void> {
     }
   }
   const lines = providers.map((provider) => {
+    if (provider.catalogUnavailable) return `- **${provider.id}**：模型目录暂不可用`;
     const models = provider.models.map((model) => model.id).join(', ') || '(无)';
-    return `- **${provider.id}**（${provider.displayName}）· ${provider.credentialReady ? '凭据就绪' : '凭据缺失'}：${models}`;
+    return `- **${provider.id}**（${provider.displayName}）· ${!provider.managed ? '由 DSH 插件管理认证' : provider.credentialReady ? '凭据就绪' : '凭据缺失'}：${models}`;
   });
   await sendWizardMarkdown(
     ctx,

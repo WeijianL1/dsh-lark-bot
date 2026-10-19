@@ -5,6 +5,7 @@ import { Document, isMap, isSeq, parseDocument } from 'yaml';
 import { writeFileAtomic } from '../platform/atomic-write.js';
 import { log } from '../core/logger.js';
 import { resolveDshHome } from './dsh-runtime.js';
+import type { ModelCatalog as HostModelCatalog } from '@deepseek-ai/dsh-api-session-controller';
 import {
   ModelsDevCatalog,
   type CatalogProvider,
@@ -86,6 +87,8 @@ export function normalizeVisionModelInputModalities(
 }
 
 export interface DshProviderSummary {
+  /** Provider is registered but its native catalog could not be loaded. */
+  catalogUnavailable?: boolean;
   id: string;
   displayName: string;
   namespace: string;
@@ -103,6 +106,13 @@ export interface DshProviderManagerOptions {
   settingsFile?: string;
   credentialsFile?: string;
   catalog?: ModelCatalog;
+  /** Loaded Host registry; OAuth providers do not live in legacy settings.yaml. */
+  runtime?: DshRuntimeModelConfig;
+}
+
+export interface DshRuntimeModelConfig {
+  modelCatalog(): Promise<HostModelCatalog>;
+  saveDefault(selection: DshModelSelection): Promise<void>;
 }
 
 export interface DshModelSelection {
@@ -457,8 +467,10 @@ export class DshProviderManager {
   private readonly settingsFile: string;
   private readonly credentialsFile: string;
   private readonly catalog: ModelCatalog;
+  private readonly runtime: DshRuntimeModelConfig | undefined;
 
   constructor(options: DshProviderManagerOptions = {}) {
+    this.runtime = options.runtime;
     this.home = options.home ?? homedir();
     this.env = options.env ?? process.env;
     const dshHome = resolveDshHome(this.home, this.env);
@@ -494,6 +506,32 @@ export class DshProviderManager {
   }
 
   async listProviders(): Promise<DshProviderSummary[]> {
+    if (this.runtime) {
+      const catalog = await this.runtime.modelCatalog();
+      const providers: DshProviderSummary[] = catalog.groups.map((group) => ({
+        id: group.id,
+        displayName: group.name,
+        namespace: group.id,
+        configured: true,
+        credentialRef: undefined,
+        // Registry membership is not proof of OAuth or API-key readiness.
+        credentialReady: false,
+        managed: false,
+        models: group.models.map((model) => ({
+          id: model.id,
+          name: model.name,
+          contextWindow: undefined,
+          maxTokens: undefined,
+          reasoningEfforts: model.reasoning?.efforts.map((effort) => effort.id),
+        })),
+      }));
+      providers.push(...catalog.failures.map((failure) => ({
+        id: failure.id, displayName: failure.name, namespace: failure.id,
+        configured: true, credentialRef: undefined, credentialReady: false,
+        managed: false, models: [], catalogUnavailable: true,
+      })));
+      return providers;
+    }
     const settings = await this.readSettings();
     let catalogProviders: CatalogProvider[] = [];
     try {
@@ -599,6 +637,7 @@ export class DshProviderManager {
 
   /** Read the full `agent-default-model` selection (provider + model). */
   async defaultModelSelection(): Promise<DshModelSelection | undefined> {
+    if (this.runtime) return (await this.runtime.modelCatalog()).default;
     return defaultModelSelectionFromSettings(await this.readSettings());
   }
 
@@ -609,6 +648,10 @@ export class DshProviderManager {
    */
   async resolveProviderForModel(modelId: string): Promise<DshProviderSummary | undefined> {
     const providers = await this.listProviders();
+    if (this.runtime) {
+      const owners = providers.filter((provider) => provider.models.some((model) => model.id === modelId));
+      return owners.length === 1 ? owners[0] : undefined;
+    }
     const explicit = providers.filter((provider) => provider.configured);
     const owned = explicit.find((provider) =>
       provider.models.some((model) => model.id === modelId),
@@ -648,6 +691,10 @@ export class DshProviderManager {
       throw new Error(
         `模型 ${model} 未在任何已配置 provider 中找到，无法设为默认；可先 /model add 或 /provider add 添加。`,
       );
+    }
+    if (this.runtime) {
+      await this.runtime.saveDefault(route);
+      return;
     }
     // dsh's official `agent-default-model` schema requires BOTH provider and
     // model; writing only `model` makes the section unreadable for the runtime.

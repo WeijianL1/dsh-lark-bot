@@ -56,7 +56,7 @@ import { resolveAppPaths } from '../../config/app-paths.js';
 import { AccessManager } from '../../config/access-manager.js';
 import { loadRuntimeEnv } from '../../config/env.js';
 import { ConfigStore } from '../../config/profile-store.js';
-import { DEEPSEEK_PROVIDER, DshProviderManager } from '../../config/dsh-config.js';
+import { DEEPSEEK_PROVIDER, DshProviderManager, type DshRuntimeModelConfig } from '../../config/dsh-config.js';
 import { log } from '../../core/logger.js';
 import { onboardPersonalAgent } from '../../onboard/registration.js';
 import { prepareAttachments } from '../../media/attachments.js';
@@ -132,6 +132,7 @@ export interface BridgeEngineSafeSettings {
 }
 
 export interface BridgeEngineOptions {
+  runtimeModels?: DshRuntimeModelConfig;
   feedbackGenerate?: FeedbackGenerate;
   env: RuntimeEnv;
   profileName: string;
@@ -349,7 +350,8 @@ export async function startBridgeEngine(
   const runCardAnchors = new RunCardAnchors();
   const models = new ModelStore();
   const wizardStore = new WizardStore();
-  const dshConfig = new DshProviderManager({ env: process.env });
+  const dshConfig = new DshProviderManager({ env: process.env,
+    ...(options.runtimeModels ? { runtime: options.runtimeModels } : {}) });
   const secretRequests = new SecretRequestRegistry(new SecretTargetManager({
     dsh: dshConfig, profiles: configStore, profileName,
   }));

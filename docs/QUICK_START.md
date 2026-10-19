@@ -9,6 +9,10 @@
 - 此 fork 的兼容基线为 dsh `0.2.0-rc.2`；旧版部署请先按 [升级说明](UPGRADE_DSH_020.md) 保留回滚环境
 - 一个飞书 / Lark 账号
 
+DSH 0.2 原生 Host 中，配置好 Codex OAuth 后可直接在飞书 `/model` 或 `/config`
+查看 GPT 模型，无需额外复制 API key 或生成旧 `settings.yaml`。
+管理员可用 `/model default <provider/model>` 保存原生默认模型。
+
 ## 2. 安装（唯一路径）
 
 ```bash

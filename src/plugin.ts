@@ -154,6 +154,7 @@ export class LarkBridgeService extends Service {
       ...(env.feedbackRepair || env.feedbackMemory || env.smartIntervention ? { feedbackGenerate: this.feedbackGenerate } : {}),
       ...(deps.createChannel ? { createChannel: deps.createChannel } : {}),
       ...(adapter ? { adapter } : {}),
+      ...(adapter instanceof HostDshAdapter ? { runtimeModels: adapter.runtimeModels } : {}),
     })
       .then((engine) => {
         this.engine = engine;

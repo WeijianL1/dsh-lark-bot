@@ -9,6 +9,7 @@ import type {
   AgentRun,
 } from '../../src/adapters/types.js';
 import { ActiveRuns } from '../../src/bot/active-runs.js';
+import { translateSessionEvent } from '../../src/adapters/dsh/sdk-translate.js';
 import { ApprovalRegistry } from '../../src/bot/approvals.js';
 import type { PermissionPolicyStore } from '../../src/bot/permission-policy-store.js';
 import { PlanApprovalRegistry } from '../../src/bot/plan-approvals.js';
@@ -1913,6 +1914,48 @@ describe('interim text bubbles (issue #95)', () => {
     // "Hello world" was flushed as an interim bubble; the final answer is only
     // the remaining " Done" — never a re-send of the whole output.
     expect(fake.messages).toEqual(['Hello world', ' Done']);
+  });
+
+  it('delivers a corrected final answer even after a divergent interim bubble was sent', async () => {
+    const fake = makeChannel();
+    const input = baseInput('chat-rewritten', [
+      { type: 'text', delta: 'Hello' },
+      { type: 'tool_use', id: 't1', name: 'read', input: {} },
+      { type: 'final_text', content: 'hello world' },
+      { type: 'done', sessionId: 's', terminationReason: 'normal' },
+    ], fake.channel);
+    await runAgentBatch(input);
+    expect(fake.messages).toEqual(['Hello', 'hello world']);
+    expect(input.sessions.historyFor('chat-rewritten', '/tmp/project').at(-1)?.content).toBe('hello world');
+  });
+
+  it('delivers only the settled SDK answer when provisional text was rewritten', async () => {
+    const fake = makeChannel();
+    const tracker = { emitted: new Set<string>() };
+    const events = [
+      ...translateSessionEvent({ type: 'assistant/chunk', data: { chunk: { type: 'text-delta', text: 'Hello' } } }, tracker),
+      ...translateSessionEvent({ type: 'assistant/message', seq: 10, data: {
+        turn: 1, step: 1, message: { content: [{ type: 'text', text: 'hello world' }] },
+      } }, tracker),
+      { type: 'done' as const, sessionId: 's', terminationReason: 'normal' as const },
+    ];
+    const input = baseInput('chat-settled-sdk', events, fake.channel);
+    await runAgentBatch(input);
+    expect(fake.messages).toEqual(['hello world']);
+    expect(input.sessions.historyFor('chat-settled-sdk', '/tmp/project').at(-1)?.content).toBe('hello world');
+  });
+
+  it.each([false, true])('keeps corrected settlement ahead of later steps (already sent: %s)', async (alreadySent) => {
+    const fake = makeChannel();
+    await runAgentBatch(baseInput('chat-rewrite-then-tool', [
+      { type: 'text', delta: 'Wrong' },
+      ...(alreadySent ? [{ type: 'tool_use' as const, id: 'earlier', name: 'read', input: {} }] : []),
+      { type: 'final_text', content: 'Correct.' },
+      { type: 'text', delta: ' Tail' },
+      { type: 'tool_use', id: 't1', name: 'read', input: {} },
+      { type: 'done', sessionId: 's', terminationReason: 'normal' },
+    ], fake.channel));
+    expect(fake.messages).toEqual(alreadySent ? ['Wrong', 'Correct. Tail'] : ['Correct. Tail']);
   });
 
   it('keeps a single uninterrupted answer as one final bubble', async () => {

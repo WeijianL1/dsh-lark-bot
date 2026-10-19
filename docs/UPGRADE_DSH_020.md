@@ -1,6 +1,6 @@
 # Fork upgrade to DSH 0.2
 
-This fork targets DSH `0.2.0-rc.2`, Lark `0.19.17-fork.1`, Codex Connect
+This fork targets DSH `0.2.0-rc.2`, Lark `0.19.17-fork.2`, Codex Connect
 `0.2.0-alpha.2`, and Mnemon `0.5.24`. The fork baseline is Lark origin/main
 `d91dfa2`; the upstream Lark baseline remains `6e722e0` (`0.19.16`).
 
@@ -12,6 +12,15 @@ and transient assistant streams feed the existing renderer. Committed answers
 fill missing text without repeating streamed prefixes; committed usage stays
 deduplicated by step, and first-class tool results retain their call IDs.
 
+When provisional text differs from settlement, the adapter emits an authoritative
+`final_text` snapshot for the whole run. Earlier settled steps remain present;
+retried attempts replace their own step. The card replaces its provisional text
+blocks while retaining tools. If an earlier interim bubble already reached
+Feishu and differs, the corrected final answer is sent in full as a separate
+message; that already-delivered interim bubble is not rewritten or withdrawn.
+Dedicated committed-content, card-state and run-flow regressions cover these
+boundaries, including truncation, empty settlement and retransmission.
+
 Native cancellation handles stops during session creation and prompt acceptance.
 Controller availability and removal are tied to the plugin lifecycle. Settings
 use loader-owned volatile references and native browser config forms.
@@ -22,7 +31,8 @@ registration. DSH 0.2 profiles own their provider configuration: legacy
 `settings.yaml` is imported into the first profile and retained as a backup;
 independent SDK/ACP profiles need their own provider rows.
 
-The native Host uses the current DSH session model selection. It does not call
+The native Host has no hardcoded provider or model fallback and uses the current
+DSH session model selection. It does not call
 `selectModel` solely to apply a bridge model override, because that API also
 changes the saved default for future sessions. The standalone legacy HTTP Web
 adapter is not the DSH 0.2 production integration.

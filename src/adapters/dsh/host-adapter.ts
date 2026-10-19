@@ -8,7 +8,7 @@ export class HostDshAdapter extends WebDshAdapter {
   private readonly controller: SessionController;
   private readonly streams = new Set<WebSocket>();
 
-  constructor(private readonly host: Context, options: WebAdapterOptions) {
+  constructor(private readonly host: Context, options: WebAdapterOptions = {}) {
     super(options);
     const controller = host.get('sessionController');
     if (!controller) throw new Error('DSH Session controller is unavailable');

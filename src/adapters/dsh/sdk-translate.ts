@@ -41,6 +41,8 @@ interface ToolDeltaTracker {
   messageSamples?: Set<string>;
   streamedText?: string;
   streamedThinking?: string;
+  /** Settled text per turn/step; retries replace their own segment. */
+  textSegments?: Map<string, string>;
 }
 
 function translateChunk(chunk: unknown, tracker: ToolDeltaTracker): AgentEvent[] {
@@ -111,8 +113,25 @@ function translateCommittedContent(data: unknown, tracker: ToolDeltaTracker, seq
       if (record.type === 'chunk' && isRecord(record.chunk) && record.chunk.type === `${type}-delta`) return record.chunk.text ?? '';
       return '';
     }).join('');
+    if (type === 'text') {
+      const segments = tracker.textSegments ??= new Map<string, string>();
+      const segmentKey = typeof data.turn === 'number' && typeof data.step === 'number'
+        ? `step:${data.turn}:${data.step}` : key ?? `message:${segments.size}`;
+      const previous = segments.get(segmentKey);
+      segments.set(segmentKey, full);
+      if ((previous !== undefined && (previous !== full || !!streamed)) ||
+          (streamed && !full.startsWith(streamed))) {
+        // final_text replaces the entire accumulated answer, not just this
+        // message. Keep earlier steps while removing provisional/retried text.
+        events.push({ type: 'final_text', content: [...segments.values()].join('') });
+      } else if (previous === undefined) {
+        const delta = full.slice(streamed?.length ?? 0);
+        if (delta) events.push({ type: 'text', delta });
+      }
+      continue;
+    }
     const delta = streamed && full.startsWith(streamed) ? full.slice(streamed.length) : streamed ? '' : full;
-    if (delta) events.push(type === 'text' ? { type: 'text', delta } : { type: 'thinking', delta });
+    if (delta) events.push({ type: 'thinking', delta });
   }
   tracker.streamedText = ''; tracker.streamedThinking = '';
   return events;

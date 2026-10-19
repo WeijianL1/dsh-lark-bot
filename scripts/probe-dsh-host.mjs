@@ -69,7 +69,7 @@ export function apply(ctx) {
       resolve: () => ({ chatId: 'probe-chat', chatType: 'p2p', actorId: 'probe-user', transport: 'feishu', workspace: ${JSON.stringify(workspace)} }),
       observe: async evidence => { observations.push(evidence); }, recall: async () => '', activity: () => {},
     });
-    const adapter = new HostDshAdapter(ctx, { provider: 'compat-host', model: 'compat-model' });
+    const adapter = new HostDshAdapter(ctx);
     if (${Boolean(process.env.DSH_HOST_PROBE_SESSIONS)}) {
       let listed;
       const expected = ${JSON.stringify(expectedSessions)};

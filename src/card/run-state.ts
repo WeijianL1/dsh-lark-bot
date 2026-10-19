@@ -121,7 +121,7 @@ export function reduce(state: RunState, event: AgentEvent): RunState {
       return {
         ...state,
         blocks: [
-          ...closeStreamingText(state.blocks),
+          ...state.blocks.filter(block => block.kind !== 'text'),
           { kind: 'text', content: event.content, streaming: false },
         ],
         reasoning: { ...state.reasoning, active: false },

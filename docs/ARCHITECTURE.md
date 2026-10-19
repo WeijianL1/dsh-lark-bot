@@ -1,5 +1,9 @@
 # 架构 · Architecture
 
+此 fork 的 DSH 0.2 集成使用原生 Session controller，并以 committed 消息修正临时
+文本；`final_text` 覆盖整轮回答、保留工具记录。旧代际实现说明以
+[DSH 0.2 升级说明](UPGRADE_DSH_020.md) 的兼容边界为准。
+
 > 本文件描述 dsh-lark-bot 的总体架构与分层设计，仍在演进中。
 > This document describes the overall architecture and layering of dsh-lark-bot. Still evolving.
 

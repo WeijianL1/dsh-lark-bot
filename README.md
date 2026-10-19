@@ -20,6 +20,9 @@
 
 ## 产品简介
 
+此 fork 的 DSH 0.2 适配、最终回答覆盖语义及手动验证边界见
+[升级说明](docs/UPGRADE_DSH_020.md)。
+
 让 DeepSeek Harness 成为你飞书里的一员，在手机、群聊、话题里直接指挥本机 coding agent。
 走飞书 WebSocket 长连接，**不需要公网 IP、域名、服务器或内网穿透**；Linux / macOS / Windows 通用，Node.js ≥ 22。
 

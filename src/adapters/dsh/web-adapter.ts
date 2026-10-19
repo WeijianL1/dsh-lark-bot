@@ -12,8 +12,8 @@ import { translateSessionEvent } from './sdk-translate.js';
 export interface WebAdapterOptions {
   /** Base URL of the local dsh web agent (default http://127.0.0.1:3080). */
   baseUrl?: string;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
 }
 
 function waitWithTimeout(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
@@ -252,7 +252,7 @@ export class WebDshAdapter implements AgentAdapter {
   readonly resumeCapable = true;
 
   private readonly baseUrl: string;
-  private readonly model: string;
+  private readonly model: string | undefined;
   private readonly sockets = new Set<WebSocket>();
   private disposed = false;
   private promptObserver: ((input: {
@@ -261,7 +261,7 @@ export class WebDshAdapter implements AgentAdapter {
     origin: NonNullable<AgentRunOptions['origin']>;
   }) => Promise<void>) | undefined;
 
-  constructor(options: WebAdapterOptions) {
+  constructor(options: WebAdapterOptions = {}) {
     this.baseUrl = (options.baseUrl ?? 'http://127.0.0.1:3080').replace(/\/+$/, '');
     this.model = options.model;
   }

@@ -1,5 +1,10 @@
 # API 契约 · API Contract
 
+DSH 0.2 fork: `AgentEvent.final_text` is the authoritative complete run text.
+Renderers replace provisional answer text while retaining tool records; delivery
+sends the full corrected answer if previously delivered interim text diverges.
+See [DSH 0.2 compatibility](UPGRADE_DSH_020.md).
+
 > 本文记录 dsh-lark-bot 对内部模块和外部调用方暴露的稳定接口。当前处于 P3 演进阶段，接口可能随 dsh SDK/ACP 落版而调整。
 > This file records stable interfaces exposed by dsh-lark-bot. They are still evolving during P3 and may change when the dsh ACP/SDK integration is finalized.
 

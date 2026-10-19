@@ -9,6 +9,7 @@ function fixture() {
     create: vi.fn().mockResolvedValue({ sessionId: 'session-1' }),
     prompt: vi.fn().mockResolvedValue({ accepted: true }),
     cancel: vi.fn().mockResolvedValue({ accepted: true }),
+    selectModel: vi.fn(),
     list: vi.fn().mockResolvedValue({ items: [] }),
     follow: vi.fn((_options: unknown, _signal: AbortSignal) => ({ [Symbol.asyncIterator]: () => ({
       next: async () => ({ done: false, value: { type: 'snapshot', cursor: 10,
@@ -20,11 +21,29 @@ function fixture() {
   const host = { get: () => controller, on: (name: string, fn: (...args: any[]) => void) => {
     listeners.set(name, fn); return () => { listeners.delete(name); unsubscribe(); };
   } };
-  const adapter = new HostDshAdapter(host as never, { provider: 'test', model: 'test' });
+  const adapter = new HostDshAdapter(host as never);
   return { adapter, controller, returned, unsubscribe, emit: (id: string, event: unknown) => listeners.get('session/event')?.({ id }, event), emitChunk: (text: string) => listeners.get('agent/assistant-stream')?.({ agent: { session: { id: 'session-1' } }, frame: { type: 'chunk', chunk: { type: 'text-delta', text } } }) };
 }
 
 describe('native Host session bridge', () => {
+  it('leaves model selection with the Host and does not invent a model label', async () => {
+    const { adapter, controller, emit } = fixture();
+    const run = adapter.run({ runId: 'host-default', prompt: 'hello', cwd: '/tmp',
+      sessionId: undefined, model: undefined, images: undefined, stopGraceMs: undefined });
+    const events = run.events[Symbol.asyncIterator]();
+    expect((await events.next()).value).toEqual({
+      type: 'system', sessionId: 'session-1', cwd: '/tmp', model: undefined,
+    });
+    await vi.waitFor(() => expect(controller.prompt).toHaveBeenCalledOnce());
+    expect(controller.create).toHaveBeenCalledWith({ cwd: '/tmp' });
+    expect(controller.prompt.mock.calls[0]?.[0]).not.toHaveProperty('provider');
+    expect(controller.prompt.mock.calls[0]?.[0]).not.toHaveProperty('model');
+    expect(controller.selectModel).not.toHaveBeenCalled();
+    emit('session-1', { type: 'turn/end', data: {} });
+    await events.next();
+    await adapter.dispose();
+  });
+
   it('never submits a prompt when stopped during session creation', async () => {
     const { adapter, controller } = fixture();
     let release!: (value: { sessionId: string }) => void;

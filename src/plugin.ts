@@ -146,7 +146,7 @@ export class LarkBridgeService extends Service {
   start(config: Config = {}, deps: PluginDeps = {}): Promise<BridgeEngine> {
     if (this.startPromise) return this.startPromise;
     const env = envForConfig(config, deps.env ?? process.env);
-    const adapter = deps.adapter ?? (env.adapterMode === 'web' ? new HostDshAdapter(this.host, { provider: 'openai-codex', model: env.model ?? 'gpt-5.6-sol' }) : undefined);
+    const adapter = deps.adapter ?? (env.adapterMode === 'web' ? new HostDshAdapter(this.host) : undefined);
     this.startPromise = startBridgeEngine({
       env,
       profileName: config.profile ?? 'default',

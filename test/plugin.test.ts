@@ -197,6 +197,12 @@ describe('dsh-lark-bot bundle plugin', () => {
         expect(await readFile(settingsFile, 'utf8')).toContain('inputModalities:');
       }, { timeout: 10_000 });
       await vi.waitFor(() => expect(adapter.run).toHaveBeenCalledOnce());
+      // run() starts an asynchronous queue flush. Wait for its durable terminal
+      // receipt before stopping the engine and removing its temporary home.
+      await vi.waitFor(async () => {
+        const ledger = JSON.parse(await readFile(join(root, 'profiles/default/jobs.json'), 'utf8'));
+        expect(ledger.records['vision-message']?.state).toBe('completed');
+      }, { timeout: 10_000 });
     } finally {
       await dispose();
     }

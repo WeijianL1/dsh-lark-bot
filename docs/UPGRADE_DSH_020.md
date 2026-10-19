@@ -41,6 +41,33 @@ owning profile saves its volatile configuration; it never recreates the legacy
 settings file. Native wizard values include the provider to distinguish duplicate
 model IDs. This catalog fix does not change the session override limitation below.
 
+### Bootstrap identity in an installed profile
+
+A profile may carry another physical copy of `@deepseek-ai/dsh-app-boot` through
+plugin dependencies. Its private root-Include registry differs from the launcher's
+copy even at the same version. ConfigEditor then rejects saves with
+`profile reload requires the root Include entry`, before writing the model.
+The profile must declare a direct `link:` dependency on the booted installation's
+app-boot package directory. Regenerate the lockfile and reinstall with the normal
+package manager policies; do not patch library code or bypass configuration validation.
+
+Before changing launchers, relocating, or removing an old installation, update
+that link and its lockfile to the new host. Preserve the previous package manifest,
+lockfile and complete module tree for rollback. Keep this static preflight in the
+service startup checks:
+
+```sh
+node scripts/check-host-module-identity.mjs --host-bin /path/to/dsh/lib/bin.js --profile /path/to/profile
+```
+
+This checks ordinary Node resolution; DSH also installs runtime resolution hooks.
+It is not a substitute for the native probe. Use
+`DSH_HOST_PROBE_PROFILE_NODE_MODULES=/path/to/profile/node_modules` with the probe
+below to cover installed dependency topology. It hard-links read-only module inputs
+into an isolated profile, edits and restores different defaults, verifies the saved
+patch, and starts a second process to check persistence. It copies no OAuth files
+and does not install or write packages in the input tree.
+
 The native Host has no hardcoded provider or model fallback and uses the current
 DSH session model selection. It does not call
 `selectModel` solely to apply a bridge model override, because that API also

@@ -12,6 +12,8 @@
 DSH 0.2 原生 Host 中，配置好 Codex OAuth 后可直接在飞书 `/model` 或 `/config`
 查看 GPT 模型，无需额外复制 API key 或生成旧 `settings.yaml`。
 管理员可用 `/model default <provider/model>` 保存原生默认模型。
+如果安装了包含核心依赖的插件，请按[升级说明](UPGRADE_DSH_020.md#bootstrap-identity-in-an-installed-profile)
+检查 app-boot 模块身份，避免同版本的独立副本导致默认模型无法保存。
 
 ## 2. 安装（唯一路径）
 

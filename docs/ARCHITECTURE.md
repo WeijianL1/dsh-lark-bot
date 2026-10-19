@@ -7,6 +7,8 @@
 原生 Host 通过 `BridgeEngineOptions.runtimeModels` 注入模型目录和默认模型保存端口。
 `DshProviderManager` 在此路径使用运行时注册表，包含 OAuth 插件，且不读取旧配置
 或 models.dev；独立 SDK/ACP 路径保留既有配置读取逻辑。
+ConfigEditor 与启动器须共用同一个 app-boot 模块实例；其根 Include 注册表属于
+进程内模块状态，同版本的物理副本无法互换。部署检查同时验证解析路径与原生重载。
 
 > 本文件描述 dsh-lark-bot 的总体架构与分层设计，仍在演进中。
 > This document describes the overall architecture and layering of dsh-lark-bot. Still evolving.

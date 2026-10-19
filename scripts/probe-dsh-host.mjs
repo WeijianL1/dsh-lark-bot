@@ -4,7 +4,7 @@ const require = createRequire(import.meta.url);
 const { build } = createRequire(require.resolve('tsup'))('esbuild');
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,6 +15,24 @@ const root = await mkdtemp(join(tmpdir(), 'dsh-host-probe-'));
 const home = join(root, 'home');
 const workspace = join(root, 'workspace');
 await Promise.all([mkdir(home), mkdir(workspace)]);
+// Copy code only: a symlink changes DSH's linked-profile resolution semantics.
+if (process.env.DSH_HOST_PROBE_PROFILE_NODE_MODULES) {
+  const profile = join(home, 'profiles', 'web');
+  const modules = resolve(process.env.DSH_HOST_PROBE_PROFILE_NODE_MODULES);
+  const manifest = JSON.parse(await readFile(join(modules, '..', 'package.json'), 'utf8'));
+  await mkdir(profile, { recursive: true });
+  await writeFile(join(profile, 'package.json'), JSON.stringify({ name: 'native-host-probe', private: true,
+    dependencies: manifest.dependencies,
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+  }));
+  // No installer runs on this fixture; hard-linked module files are read-only inputs.
+  execFileSync('cp', ['-al', modules, join(profile, 'node_modules')]);
+  const bootstrap = '@deepseek-ai/dsh-app-boot';
+  if ((await lstat(join(modules, bootstrap))).isSymbolicLink()) {
+    await unlink(join(profile, 'node_modules', bootstrap));
+    await symlink(await realpath(join(modules, bootstrap)), join(profile, 'node_modules', bootstrap), 'dir');
+  }
+}
 if (process.env.DSH_HOST_PROBE_SESSIONS) await cp(process.env.DSH_HOST_PROBE_SESSIONS, join(home, 'sessions'), { recursive: true });
 const expectedSessions = [];
 async function inventory(directory) {
@@ -74,6 +92,10 @@ export function apply(ctx) {
       observe: async evidence => { observations.push(evidence); }, recall: async () => '', activity: () => {},
     });
     const adapter = new HostDshAdapter(ctx);
+    if (process.env.DSH_HOST_PROBE_RESTART === '1') {
+      const persisted = await adapter.runtimeModels.modelCatalog();
+      if (persisted.default.provider !== 'compat-host' || persisted.default.model !== 'compat-model') throw new Error('Native default was lost after process restart');
+    }
     if (${Boolean(process.env.DSH_HOST_PROBE_SESSIONS)}) {
       let listed;
       const expected = ${JSON.stringify(expectedSessions)};
@@ -120,6 +142,15 @@ export function apply(ctx) {
     await modelConfig.setDefaultModel('compat-host/compat-model');
     const defaultModel = await modelConfig.defaultModelSelection();
     if (defaultModel.provider !== 'compat-host' || defaultModel.model !== 'compat-model') throw new Error('Native default model was not saved');
+    await modelConfig.setDefaultModel('compat-host/compat-alternate');
+    const changed = await modelConfig.defaultModelSelection();
+    if (changed.model !== 'compat-alternate') throw new Error('Changed native default was not applied');
+    const savedPatch = await (await import('node:fs/promises')).readFile(${JSON.stringify(join(home, 'profiles', 'web', 'cordis.patch.yml'))}, 'utf8');
+    if (!savedPatch.includes('model: compat-alternate')) throw new Error('Changed native default was not persisted');
+    await modelConfig.setDefaultModel('compat-host/compat-model');
+    const restored = await modelConfig.defaultModelSelection();
+    const restoredPatch = await (await import('node:fs/promises')).readFile(${JSON.stringify(join(home, 'profiles', 'web', 'cordis.patch.yml'))}, 'utf8');
+    if (restored.model !== 'compat-model' || !restoredPatch.includes('model: compat-model')) throw new Error('Native default restoration failed');
     for (let i = 0; i < 2; i++) {
       const run = adapter.run({ runId: 'probe-' + i, prompt: 'Verify native host bridge', sessionId, cwd: ${JSON.stringify(workspace)} });
       let text = ''; let usage = 0;
@@ -151,13 +182,15 @@ await writeFile(patch, `- id: llm-pi-ai
         apiKeyEnv: COMPAT_HOST_KEY
         models:
           - id: compat-model
+          - id: compat-alternate
 - insert:
     - id: native-host-probe
       name: ${JSON.stringify(probe)}
 `);
 console.log(`[host-probe] isolated home: ${home}`);
+async function bootProbe(restarting = false) {
 const child = spawn(process.execPath, [bin, '--profile', 'web', '--patch', patch, '--host', '127.0.0.1', '--port', '0', '--no-open'], {
-  cwd: workspace, env: { ...process.env, DSH_HOME: home, COMPAT_HOST_KEY: 'synthetic', DSH_PERMISSION_MODE: 'danger-full-access', DSH_LARK_DISABLED: '1' },
+  cwd: workspace, env: { ...process.env, DSH_HOME: home, COMPAT_HOST_KEY: 'synthetic', DSH_PERMISSION_MODE: 'danger-full-access', DSH_LARK_DISABLED: '1', DSH_HOST_PROBE_RESTART: restarting ? '1' : '0' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '';
@@ -174,9 +207,13 @@ try {
     child.once('exit', code => { clearTimeout(timer); reject(new Error(`Host exited ${code}: ${output}`)); });
   });
   if (process.env.DSH_HOST_PROBE_SESSIONS) console.log('[host-probe] ' + output.match(/LEGACY_HOST_HISTORY_PROBE_OK[^\n]*/)?.[0]);
-  console.log('[host-probe] real native create, streaming answer, one usage sample per step, continuation, history, tool-free feedback and conversation learning passed');
+  console.log('[host-probe] native model discovery, default change/persistence/restoration, streaming, usage, continuation, history, feedback and learning passed' + (restarting ? ' after restart' : ''));
 } finally {
   child.kill('SIGTERM');
   await new Promise(resolve => { if (child.exitCode !== null) resolve(); else child.once('exit', resolve); });
-  await new Promise(resolve => model.close(resolve));
 }
+}
+try {
+  await bootProbe();
+  if (process.env.DSH_HOST_PROBE_PROFILE_NODE_MODULES) await bootProbe(true);
+} finally { await new Promise(resolve => model.close(resolve)); }
